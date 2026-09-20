@@ -1,5 +1,8 @@
 # Catical
 
+[![CI](https://github.com/kittsville/CatiCal/actions/workflows/build.yml/badge.svg)](https://github.com/kittsville/CatiCal/actions/workflows/build.yml)
+[![WARN-LLM GENERATED](https://img.shields.io/badge/WARN-LLM%20GENERATED-FF6347)](https://github.com/40ants/ai-badges)
+
 Concatenates multiple iCal subscription feeds into a single feed. Makes it easier to share your complex calendar with friends or partners. Unlocking new polyamorous possibilities.
 
 **https://catical.sci1.uk** — no accounts. Create a mix and you get two URLs: a feed to subscribe to, and a manage link. Copy both immediately. The manage URL is unrecoverable; the feed URL is not shown again. Lose manage and the mix is gone (you can still rotate tokens from manage while you have it).
@@ -37,7 +40,7 @@ Migrations apply on process start (version table; safe to run twice). Listen `:8
 
 Push to `main` runs GitHub Actions: tests, `docker build`, push `ghcr.io/kittsville/catical:latest`, then the same Coolify webhook curl as Recibase (`COOLIFY_TOKEN` + `COOLIFY_DEPLOY_WEBHOOK` repo secrets).
 
-Coolify app is a **Docker Image** (not a git build): image `ghcr.io/kittsville/catical`, tag `latest`, listen `8080`, healthcheck `GET /healthz`, domain `https://catical.sci1.uk`. Pair with a Postgres resource. Set `DATABASE_URL`, `BASE_URL=https://catical.sci1.uk`, Turnstile keys, and `LOG_LEVEL`. Migrations run on boot. The image includes `wget` so Coolify’s healthcheck can exec inside the container.
+Coolify app is a **Docker Image** (not a git build): image `ghcr.io/kittsville/catical`, tag `latest`, listen `8080`, healthcheck `GET /healthz`, domain `https://catical.sci1.uk`. Pair with a Postgres resource. Set `DATABASE_URL`, `BASE_URL=https://catical.sci1.uk`, Turnstile keys, and `LOG_LEVEL`. Migrations run on boot. The image includes `curl` and `wget` so Coolify’s healthcheck can exec inside the container.
 
 ## Tests
 
