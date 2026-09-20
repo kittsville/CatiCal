@@ -407,17 +407,31 @@ func manageURL(base, id string, secret []byte) string {
 	return base + "/m/" + id + "/" + hex.EncodeToString(secret)
 }
 
-const layoutCSS = `main{width:100%;max-width:42rem;margin:1.5rem auto;padding:0 1rem}
+const layoutCSS = `*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+html,body{margin:0;max-width:100%}
+main,footer{width:100%;max-width:42rem;margin:1.5rem auto;padding:0 1rem;min-width:0}
+footer{margin-top:2rem;margin-bottom:1rem;font-size:.9rem;overflow-wrap:anywhere}
+h1.mdc-typography--headline1{font-size:clamp(1.75rem,6vw,2.75rem);line-height:1.15;font-weight:400;letter-spacing:normal;margin:.25rem 0 .75rem;overflow-wrap:anywhere}
+p,label,dd,dt{overflow-wrap:anywhere;max-width:100%}
 label{display:block;margin:.6rem 0 .2rem}
-input[type=text],input[type=url]{width:100%;box-sizing:border-box;padding:.4rem}
-.row{display:grid;grid-template-columns:1fr 8rem;gap:.5rem}
+input[type=text],input[type=url]{display:block;width:100%;max-width:100%;padding:.4rem}
+.row{display:grid;grid-template-columns:minmax(0,1fr) minmax(5rem,8rem);gap:.5rem;margin:.5rem 0;}
+.row>*{min-width:0;max-width:100%}
 .err{color:#a40000}
-.warn{background:#fff3cd;padding:.75rem;border:1px solid #c9a227}
-code,pre{word-break:break-all;white-space:pre-wrap}
+.warn{background:#fff3cd;padding:.75rem;border:1px solid #c9a227;overflow-wrap:anywhere}
+code,pre{word-break:break-all;white-space:pre-wrap;overflow-wrap:anywhere;max-width:100%}
 .mdc-button{margin:.4rem .4rem 0 0}
+.actions{display:flex;flex-wrap:wrap;align-items:stretch;gap:.4rem}
+.cf-turnstile{max-width:100%;overflow-x:auto}
 dt{font-weight:500;margin-top:1rem}
 dd{margin:.35rem 0 0 0}
-footer{width:100%;max-width:42rem;margin:2rem auto 1rem;padding:0 1rem;font-size:.9rem}`
+@media (max-width:36rem){
+.row{grid-template-columns:1fr}
+.actions{flex-direction:column}
+.actions .mdc-button,.mdc-button{width:100%;margin:.4rem 0 0}
+main,footer{padding:0 .75rem}
+}`
 
 func htmlShell(inner string) string {
 	return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="robots" content="noindex"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{{.Title}}</title>` +
@@ -490,7 +504,7 @@ const manageBody = `
 {{if .SiteKey}}
 <div class="cf-turnstile" data-sitekey="{{.SiteKey}}" data-action="{{.TurnstileAction}}"></div>
 {{end}}
-<p>
+<p class="actions">
 <button ` + mdcRaised + ` name="action" value="save"><span class="mdc-button__label">Save</span></button>
 <button ` + mdcOutlined + ` name="action" value="delete"><span class="mdc-button__label">Delete</span></button>
 <button ` + mdcOutlined + ` name="action" value="rotate_feed"><span class="mdc-button__label">Reset feed URL</span></button>

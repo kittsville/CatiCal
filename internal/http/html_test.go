@@ -66,6 +66,29 @@ func TestCreateFormGETHeadersAndNoindex(t *testing.T) {
 	}
 }
 
+func TestCreateFormNarrowLayoutCSS(t *testing.T) {
+	h := New(Config{Admin: newMemStore()})
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	body := rec.Body.String()
+	if !strings.Contains(body, `name="viewport" content="width=device-width,initial-scale=1"`) {
+		t.Fatal("expected mobile viewport")
+	}
+	if !strings.Contains(body, "h1.mdc-typography--headline1{font-size:clamp(") {
+		t.Fatal("expected headline size override (MDC headline1 is 6rem)")
+	}
+	if !strings.Contains(body, "@media (max-width:36rem)") {
+		t.Fatal("expected narrow-display breakpoint")
+	}
+	if !strings.Contains(body, "grid-template-columns:1fr") {
+		t.Fatal("expected stacked source rows on narrow displays")
+	}
+	if !strings.Contains(body, "input[type=text],input[type=url]{display:block;width:100%") {
+		t.Fatal("expected full-width inputs on their own line")
+	}
+}
+
 func TestFooterCommitAndSourceLinks(t *testing.T) {
 	sha := "abcdef1234567890deadbeef"
 	h := New(Config{Admin: newMemStore(), Commit: sha})
