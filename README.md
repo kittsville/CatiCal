@@ -35,7 +35,9 @@ Migrations apply on process start (version table; safe to run twice). Listen `:8
 
 ## Production (Coolify)
 
-Dockerfile build pack, listen `8080`, healthcheck `GET /healthz`, domain `https://catical.sci1.uk`. Pair with a Postgres resource. Set `DATABASE_URL`, `BASE_URL=https://catical.sci1.uk`, Turnstile keys, and `LOG_LEVEL`. Migrations run on boot.
+Push to `main` runs GitHub Actions: tests, `docker build`, push `ghcr.io/kittsville/catical:latest`, then the same Coolify webhook curl as Recibase (`COOLIFY_TOKEN` + `COOLIFY_DEPLOY_WEBHOOK` repo secrets).
+
+Coolify app is a **Docker Image** (not a git build): image `ghcr.io/kittsville/catical`, tag `latest`, listen `8080`, healthcheck `GET /healthz`, domain `https://catical.sci1.uk`. Pair with a Postgres resource. Set `DATABASE_URL`, `BASE_URL=https://catical.sci1.uk`, Turnstile keys, and `LOG_LEVEL`. Migrations run on boot. The image includes `wget` so Coolify’s healthcheck can exec inside the container.
 
 ## Tests
 

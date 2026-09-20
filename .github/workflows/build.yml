@@ -1,0 +1,56 @@
+name: Test Code + Build Docker Image
+on:
+  push:
+    branches:
+      - 'main'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: catical
+          POSTGRES_PASSWORD: catical
+          POSTGRES_DB: catical
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U catical -d catical"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    - name: Setup Go
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: go.mod
+    - name: Test
+      env:
+        DATABASE_URL: postgres://catical:catical@localhost:5432/catical?sslmode=disable
+      run: go test ./...
+    - name: Login to GitHub Container Registry
+      uses: docker/login-action@v2.1.0
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    - name: Build
+      run: docker build --label org.opencontainers.image.source=https://github.com/kittsville/CatiCal -t catical:latest .
+    - name: Docker Tag
+      run: docker tag catical:latest ghcr.io/kittsville/catical:latest
+    - name: Docker Push
+      run: docker push ghcr.io/kittsville/catical:latest
+    - name: Trigger Coolify Deployment
+      env:
+        COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+        COOLIFY_DEPLOY_WEBHOOK: ${{ secrets.COOLIFY_DEPLOY_WEBHOOK }}
+      run: |
+        curl -fsS -X POST \
+          -H "Authorization: Bearer ${COOLIFY_TOKEN}" \
+          -- "${COOLIFY_DEPLOY_WEBHOOK}"

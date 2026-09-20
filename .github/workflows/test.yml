@@ -1,0 +1,31 @@
+name: Test
+on:
+  pull_request
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: catical
+          POSTGRES_PASSWORD: catical
+          POSTGRES_DB: catical
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U catical -d catical"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    - name: Setup Go
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: go.mod
+    - name: Test
+      env:
+        DATABASE_URL: postgres://catical:catical@localhost:5432/catical?sslmode=disable
+      run: go test ./...

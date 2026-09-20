@@ -7,8 +7,12 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/catical ./cmd/catical
 
-FROM gcr.io/distroless/static-debian12:nonroot
+# Slim, not distroless: Coolify image deploys exec wget/curl via /bin/sh for /healthz.
+FROM debian:bookworm-slim
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates wget \
+    && rm -rf /var/lib/apt/lists/*
 COPY --from=build /out/catical /catical
-USER nonroot:nonroot
+USER nobody
 EXPOSE 8080
 ENTRYPOINT ["/catical"]
