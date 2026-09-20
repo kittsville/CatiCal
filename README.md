@@ -34,7 +34,7 @@ Env (production / Coolify):
 | `TURNSTILE_SECRET` | Server-side siteverify; unset = Turnstile off (local/dev) |
 | `TURNSTILE_HOSTNAMES` | Comma-separated hosts siteverify must return (optional; defaults to `BASE_URL` host, never loopback) |
 | `LOG_LEVEL` | `debug` / `info` / `warn` / `error` |
-| `SOURCE_COMMIT` | Git SHA for the footer; Coolify sets this on deploy |
+| `SOURCE_COMMIT` | Git SHA for the footer when it looks like a hash. Coolify **Docker Image** deploys set this to `HEAD` (no git checkout), so CI bakes the SHA into the binary instead |
 
 Migrations apply on process start (version table; safe to run twice). Listen `:8080`. Healthcheck: `GET /healthz`.
 
@@ -42,7 +42,7 @@ Migrations apply on process start (version table; safe to run twice). Listen `:8
 
 Push to `main` runs GitHub Actions: tests, `docker build`, push `ghcr.io/kittsville/catical:latest`, then the same Coolify webhook curl as Recibase (`COOLIFY_TOKEN` + `COOLIFY_DEPLOY_WEBHOOK` repo secrets).
 
-Coolify app is a **Docker Image** (not a git build): image `ghcr.io/kittsville/catical`, tag `latest`, listen `8080`, healthcheck `GET /healthz`, domain `https://catical.sci1.uk`. Pair with a Postgres resource. Set `DATABASE_URL`, `BASE_URL=https://catical.sci1.uk`, `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET`, and `LOG_LEVEL`. Optional `TURNSTILE_HOSTNAMES=catical.sci1.uk` if you do not want the host taken from `BASE_URL`. Migrations run on boot. The image includes `curl` and `wget` so Coolify’s healthcheck can exec inside the container.
+Coolify app is a **Docker Image** (not a git build): image `ghcr.io/kittsville/catical`, tag `latest`, listen `8080`, healthcheck `GET /healthz`, domain `https://catical.sci1.uk`. Coolify still injects `SOURCE_COMMIT=HEAD` because there is no git checkout; the footer SHA is compiled into the binary in GitHub Actions. Pair with a Postgres resource. Set `DATABASE_URL`, `BASE_URL=https://catical.sci1.uk`, `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET`, and `LOG_LEVEL`. Optional `TURNSTILE_HOSTNAMES=catical.sci1.uk` if you do not want the host taken from `BASE_URL`. Migrations run on boot. The image includes `curl` and `wget` so Coolify’s healthcheck can exec inside the container.
 
 ## Tests
 
