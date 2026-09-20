@@ -1,0 +1,7 @@
+.git
+.DS_Store
+*.exe
+*.out
+bin/
+.env
+PLAN.md

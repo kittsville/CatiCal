@@ -1,0 +1,36 @@
+services:
+  postgres:
+    build:
+      context: .
+      dockerfile: Dockerfile.postgres
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: catical
+      POSTGRES_PASSWORD: catical
+      POSTGRES_DB: catical
+    volumes:
+      - catical_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U catical -d catical"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: postgres://catical:catical@postgres:5432/catical?sslmode=disable
+      BASE_URL: http://localhost:8080
+      LOG_LEVEL: info
+      # TURNSTILE_SITE_KEY / TURNSTILE_SECRET: set to gate create/manage POSTs.
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  catical_pgdata:

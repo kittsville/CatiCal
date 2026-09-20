@@ -1,0 +1,8 @@
+/catical
+*.exe
+*.test
+*.out
+bin/
+.DS_Store
+.env
+vendor/
