@@ -89,6 +89,12 @@ func TestCreateFormNarrowLayoutCSS(t *testing.T) {
 	if !strings.Contains(body, "input[type=text],input[type=url]{display:block;width:100%") {
 		t.Fatal("expected full-width inputs on their own line")
 	}
+	if !strings.Contains(body, "code,pre{") || !strings.Contains(body, "border-radius:8px") {
+		t.Fatal("expected rounded code and pre blocks")
+	}
+	if !strings.Contains(body, "@keyframes copy-pulse") {
+		t.Fatal("expected copy pulse animation")
+	}
 }
 
 func TestSourceSlotsProgressiveReveal(t *testing.T) {
@@ -229,6 +235,19 @@ func TestPOSTCreateSuccessContainsBothLinks(t *testing.T) {
 	}
 	if !strings.Contains(strings.ToLower(body), "unrecoverable") && !strings.Contains(strings.ToLower(body), "not be shown") {
 		t.Fatal("expected unrecoverable / not shown again warning")
+	}
+	if strings.Count(body, `class="codeblock"`) != 2 {
+		t.Fatal("expected copyable code blocks for feed and manage URLs")
+	}
+	if strings.Count(body, "content_copy") != 2 {
+		t.Fatal("expected Material copy icons")
+	}
+	csp := rec.Header().Get("Content-Security-Policy")
+	if !strings.Contains(csp, copyScriptHash) {
+		t.Fatalf("CSP should allow hashed copy script: %q", csp)
+	}
+	if strings.Contains(csp, "script-src 'unsafe-inline'") {
+		t.Fatalf("CSP allows inline JS: %q", csp)
 	}
 
 	managePath := "/m/" + manageM[1] + "/" + manageM[2]

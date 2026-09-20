@@ -2,7 +2,9 @@ package httpserver
 
 import (
 	"context"
+	"crypto/sha256"
 	_ "embed"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -27,16 +29,35 @@ const htmlCSPNoJS = htmlCSPBase + "; connect-src 'none'; script-src 'none'"
 
 const htmlCSPTurnstile = htmlCSPBase + "; connect-src " + turnstileOrigin + "; script-src " + turnstileOrigin + "; frame-src " + turnstileOrigin
 
-func writeHTMLHeaders(w http.ResponseWriter, siteKey string) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Referrer-Policy", "no-referrer")
-	w.Header().Set("X-Frame-Options", "DENY")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
+const copyScript = `document.querySelectorAll(".codeblock .copy").forEach(function(btn){btn.addEventListener("click",function(){var t=btn.parentElement.querySelector("code").textContent;navigator.clipboard.writeText(t).then(function(){btn.classList.remove("is-copied");void btn.offsetWidth;btn.classList.add("is-copied");});});});`
+
+var copyScriptHash = "'sha256-" + base64.StdEncoding.EncodeToString(sha256Sum(copyScript)) + "'"
+
+func sha256Sum(s string) []byte {
+	sum := sha256.Sum256([]byte(s))
+	return sum[:]
+}
+
+func htmlCSP(siteKey string, copyJS bool) string {
 	csp := htmlCSPNoJS
 	if siteKey != "" {
 		csp = htmlCSPTurnstile
 	}
-	w.Header().Set("Content-Security-Policy", csp)
+	if !copyJS {
+		return csp
+	}
+	if siteKey != "" {
+		return strings.Replace(csp, "script-src "+turnstileOrigin, "script-src "+turnstileOrigin+" "+copyScriptHash, 1)
+	}
+	return strings.Replace(csp, "script-src 'none'", "script-src "+copyScriptHash, 1)
+}
+
+func writeHTMLHeaders(w http.ResponseWriter, siteKey string, copyJS bool) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Referrer-Policy", "no-referrer")
+	w.Header().Set("X-Frame-Options", "DENY")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Security-Policy", htmlCSP(siteKey, copyJS))
 	w.Header().Set("X-Robots-Tag", "noindex")
 }
 
@@ -58,6 +79,7 @@ type pageData struct {
 	CommitURL       string
 	SourceURL       string
 	FAQBody         template.HTML
+	CopyJS          bool
 }
 
 //go:embed faq.html
@@ -106,7 +128,7 @@ func slotsFromFeed(f store.Feed) []slot {
 }
 
 func serveFAQ(w http.ResponseWriter, cfg Config) {
-	writeHTMLHeaders(w, "")
+	writeHTMLHeaders(w, "", false)
 	_ = faqTmpl.Execute(w, withFooter(cfg, pageData{
 		Title:   "FAQ",
 		FAQBody: template.HTML(faqHTML),
@@ -114,7 +136,7 @@ func serveFAQ(w http.ResponseWriter, cfg Config) {
 }
 
 func serveCreateForm(w http.ResponseWriter, cfg Config, errMsg string, status int) {
-	writeHTMLHeaders(w, cfg.TurnstileSiteKey)
+	writeHTMLHeaders(w, cfg.TurnstileSiteKey, false)
 	if errMsg != "" {
 		if status == 0 {
 			status = http.StatusBadRequest
@@ -192,8 +214,9 @@ func serveCreate(w http.ResponseWriter, r *http.Request, cfg Config) {
 		FeedURL:   feedURL(base, feed.ID.String(), feedSecret),
 		ManageURL: manageURL(base, feed.ID.String(), manageSecret),
 		Warning:   "Copy both links now. The feed URL will not be shown again. If you lose the manage link it cannot be recovered.",
+		CopyJS:    true,
 	}
-	writeHTMLHeaders(w, cfg.TurnstileSiteKey)
+	writeHTMLHeaders(w, cfg.TurnstileSiteKey, true)
 	_ = createdTmpl.Execute(w, withFooter(cfg, data))
 }
 
@@ -294,12 +317,13 @@ func serveManagePOST(w http.ResponseWriter, r *http.Request, cfg Config) {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
-		writeHTMLHeaders(w, cfg.TurnstileSiteKey)
+		writeHTMLHeaders(w, cfg.TurnstileSiteKey, true)
 		_ = rotateTmpl.Execute(w, withFooter(cfg, pageData{
 			Title:      "Feed URL rotated",
 			NewURL:     feedURL(cfg.baseURL(), feed.ID.String(), sec),
 			FormAction: r.URL.Path,
 			Warning:    "Copy the new feed URL now. It will not be shown again. Your manage URL is unchanged.",
+			CopyJS:     true,
 		}))
 	default:
 		http.Error(w, "not found", http.StatusNotFound)
@@ -309,7 +333,7 @@ func serveManagePOST(w http.ResponseWriter, r *http.Request, cfg Config) {
 func renderManage(w http.ResponseWriter, cfg Config, status int, data pageData) {
 	data.SiteKey = cfg.TurnstileSiteKey
 	data.TurnstileAction = turnstileManage
-	writeHTMLHeaders(w, cfg.TurnstileSiteKey)
+	writeHTMLHeaders(w, cfg.TurnstileSiteKey, false)
 	w.WriteHeader(status)
 	_ = manageTmpl.Execute(w, withFooter(cfg, data))
 }
@@ -511,7 +535,13 @@ input[type=text],input[type=url]{display:block;width:100%;max-width:100%;padding
 .row>*{min-width:0;max-width:100%}
 .err{color:#a40000}
 .warn{background:#fff3cd;padding:.75rem;border:1px solid #c9a227;overflow-wrap:anywhere}
-code,pre{word-break:break-all;white-space:pre-wrap;overflow-wrap:anywhere;max-width:100%}
+code,pre{display:block;word-break:break-all;white-space:pre-wrap;overflow-wrap:anywhere;max-width:100%;background:#f3f3f3;border-radius:8px;padding:.75rem}
+.codeblock{position:relative;max-width:100%}
+.codeblock code{padding-right:2.5rem;margin:0}
+.codeblock .copy{position:absolute;top:.4rem;right:.4rem;margin:0;padding:.2rem;border:0;background:transparent;cursor:pointer;border-radius:50%;line-height:1;color:#616161}
+.codeblock .copy .material-icons{font-size:1.25rem}
+.codeblock .copy.is-copied{animation:copy-pulse 1s ease-out}
+@keyframes copy-pulse{0%{transform:scale(.95);box-shadow:0 0 0 0 rgba(97,97,97,.7)}70%{transform:scale(1);box-shadow:0 0 0 10px rgba(97,97,97,0)}100%{transform:scale(.95);box-shadow:0 0 0 0 rgba(97,97,97,0)}}
 .mdc-button{margin:.4rem .4rem 0 0}
 .actions{display:flex;flex-wrap:wrap;align-items:stretch;gap:.4rem}
 .cf-turnstile{max-width:100%;overflow-x:auto}
@@ -534,7 +564,12 @@ func htmlShell(inner string) string {
 		`</head>` +
 		`<body class="mdc-typography"><main>` + inner + `</main>` +
 		`<footer>v<a href="{{.CommitURL}}">{{.Commit}}</a> | <a href="{{.SourceURL}}">Source Code</a> | <a href="/faq">FAQ</a></footer>` +
+		`{{if .CopyJS}}<script>` + copyScript + `</script>{{end}}` +
 		`</body></html>`
+}
+
+func copyableCode(field string) string {
+	return `<div class="codeblock"><code>{{.` + field + `}}</code><button type="button" class="copy" aria-label="Copy to clipboard" title="Copy"><span class="material-icons">content_copy</span></button></div>`
 }
 
 var (
@@ -573,13 +608,13 @@ const formBody = `
 <p><button ` + mdcRaised + `><span class="mdc-button__label">Combine Calendars</span></button></p>
 </form>`
 
-const createdBody = `
+var createdBody = `
 <h1 class="mdc-typography mdc-typography--headline1">Calendars combined</h1>
 <p class="warn">{{.Warning}}</p>
 <p>Feed (subscribe in a calendar app):</p>
-<p><code>{{.FeedURL}}</code></p>
+` + copyableCode("FeedURL") + `
 <p>Manage (bookmark this; it is unrecoverable):</p>
-<p><code>{{.ManageURL}}</code></p>
+` + copyableCode("ManageURL") + `
 <p><a href="{{.ManageURL}}">Open management page</a></p>`
 
 const manageBody = `
@@ -602,9 +637,9 @@ const manageBody = `
 </form>
 <p>The ICS feed URL is not shown here. Rotate the feed token if it leaked.</p>`
 
-const rotateBody = `
+var rotateBody = `
 <h1 class="mdc-typography mdc-typography--headline1">{{.Title}}</h1>
 <p class="warn">{{.Warning}}</p>
-<p><code>{{.NewURL}}</code></p>
+` + copyableCode("NewURL") + `
 {{if .FormAction}}<p><a href="{{.FormAction}}">Back to manage</a></p>{{end}}
 <p>&#60; <a href="/">Home</a></p>`
