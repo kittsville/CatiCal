@@ -344,6 +344,7 @@ func TestCreateRejectsInvalidInput(t *testing.T) {
 		{"too many", url.Values{"name": {"n"}, "url": urls9}},
 		{"not found", url.Values{"name": {"n"}, "url": {"https://1.1.1.1/missing.ics"}}},
 		{"not ics", url.Values{"name": {"n"}, "url": {"https://1.1.1.1/not.ics"}}},
+		{"self feed", url.Values{"name": {"n"}, "url": {"https://catical.sci1.uk/c/11111111-1111-1111-1111-111111111111/deadbeef.ics"}}},
 	}
 	before := st.len()
 	for _, tc := range cases {
@@ -358,10 +359,35 @@ func TestCreateRejectsInvalidInput(t *testing.T) {
 			if tc.name == "not ics" && !strings.Contains(rec.Body.String(), "not a valid iCalendar") {
 				t.Fatalf("expected parse error, got %s", rec.Body.String())
 			}
+			if tc.name == "self feed" && !strings.Contains(rec.Body.String(), "CatiCal feeds cannot be used as sources") {
+				t.Fatalf("expected self-feed error, got %s", rec.Body.String())
+			}
 		})
 	}
 	if st.len() != before {
 		t.Fatalf("rejects must not insert, have %d", st.len())
+	}
+}
+
+func TestCreateRejectsConfiguredBaseURLFeed(t *testing.T) {
+	st := newMemStore()
+	h := New(Config{
+		Store:   st,
+		Admin:   st,
+		Refresh: &fakeRefresh{body: []byte("BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n")},
+		Fetch:   okOriginFetch(),
+		BaseURL: "https://cal.example.com",
+		Now:     func() time.Time { return time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC) },
+	})
+	rec := postForm(t, h, "/", url.Values{
+		"name": {"n"},
+		"url":  {"https://cal.example.com/c/11111111-1111-1111-1111-111111111111/aa.ics"},
+	})
+	if rec.Code < 400 {
+		t.Fatalf("status = %d, want 4xx", rec.Code)
+	}
+	if st.len() != 0 {
+		t.Fatal("must not create")
 	}
 }
 

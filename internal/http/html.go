@@ -356,7 +356,7 @@ func parseFormSources(ctx context.Context, r *http.Request, cfg Config) ([]store
 		if len(out) >= fetch.MaxSources {
 			return nil, fmt.Errorf("at most %d sources", fetch.MaxSources)
 		}
-		if err := validateHTTPSSource(ctx, raw); err != nil {
+		if err := validateHTTPSSource(ctx, cfg, raw); err != nil {
 			return nil, err
 		}
 		out = append(out, store.CreateSource{URL: raw, Label: label, Position: len(out)})
@@ -387,7 +387,7 @@ func fetchOrigins(ctx context.Context, cfg Config, urls []string) []fetch.Result
 	return fetch.GetAll(ctx, urls)
 }
 
-func validateHTTPSSource(ctx context.Context, raw string) error {
+func validateHTTPSSource(ctx context.Context, cfg Config, raw string) error {
 	u, err := url.Parse(raw)
 	if err != nil || u.Scheme == "" || u.Host == "" {
 		return fmt.Errorf("invalid URL")
@@ -395,10 +395,30 @@ func validateHTTPSSource(ctx context.Context, raw string) error {
 	if strings.ToLower(u.Scheme) != "https" {
 		return fmt.Errorf("source URLs must be https")
 	}
+	if isCatiCalURL(cfg, u) {
+		return fmt.Errorf("CatiCal feeds cannot be used as sources")
+	}
 	if err := fetch.ValidateURL(ctx, raw); err != nil {
 		return fmt.Errorf("source URL not allowed")
 	}
 	return nil
+}
+
+func isCatiCalURL(cfg Config, u *url.URL) bool {
+	host := strings.ToLower(u.Hostname())
+	if host == "" {
+		return false
+	}
+	for _, raw := range []string{cfg.baseURL(), defaultBaseURL} {
+		bu, err := url.Parse(raw)
+		if err != nil {
+			continue
+		}
+		if strings.ToLower(bu.Hostname()) == host {
+			return true
+		}
+	}
+	return false
 }
 
 func sourceErrors(f store.Feed) string {
