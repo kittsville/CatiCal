@@ -184,6 +184,9 @@ func TestTurnstileWidgetAndCSPWhenSiteKeySet(t *testing.T) {
 	if !strings.Contains(body, `data-action="create"`) {
 		t.Fatal("expected create action on widget")
 	}
+	if !strings.Contains(body, `data-theme="light"`) {
+		t.Fatal("expected light Turnstile theme")
+	}
 }
 
 func TestTurnstileManageWidgetAction(t *testing.T) {

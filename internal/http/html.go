@@ -604,7 +604,7 @@ const formBody = `
 <p>Sources (https URLs)</p>
 ` + sourceRowsHTML + `
 {{if .SiteKey}}
-<div class="cf-turnstile" data-sitekey="{{.SiteKey}}" data-action="{{.TurnstileAction}}"></div>
+<div class="cf-turnstile" data-sitekey="{{.SiteKey}}" data-action="{{.TurnstileAction}}" data-theme="light"></div>
 {{end}}
 <p><button ` + mdcRaised + `><span class="mdc-button__label">Combine Calendars</span></button></p>
 </form>`
@@ -628,7 +628,7 @@ const manageBody = `
 <p>Sources (https URLs)</p>
 ` + sourceRowsHTML + `
 {{if .SiteKey}}
-<div class="cf-turnstile" data-sitekey="{{.SiteKey}}" data-action="{{.TurnstileAction}}"></div>
+<div class="cf-turnstile" data-sitekey="{{.SiteKey}}" data-action="{{.TurnstileAction}}" data-theme="light"></div>
 {{end}}
 <p class="actions">
 <button ` + mdcRaised + ` name="action" value="save"><span class="mdc-button__label">Save</span></button>
