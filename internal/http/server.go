@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"sci1.uk/catical/internal/fetch"
 	"sci1.uk/catical/internal/store"
 	"sci1.uk/catical/internal/tokens"
 )
@@ -59,6 +60,14 @@ type Config struct {
 
 	// Commit is Coolify SOURCE_COMMIT. Empty becomes "latest".
 	Commit string
+
+	// Fetch downloads origin ICS on create/save. Nil uses fetch.GetAll.
+	Fetch OriginFetch
+}
+
+// OriginFetch is the ICS GET used to validate sources before persist.
+type OriginFetch interface {
+	GetAll(ctx context.Context, urls []string) []fetch.Result
 }
 
 func (c Config) baseURL() string {

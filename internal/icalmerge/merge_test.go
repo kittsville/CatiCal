@@ -145,6 +145,15 @@ func TestMerge_CRLFVersionProdIDAndCalName(t *testing.T) {
 	}
 }
 
+func TestParse_RejectsNonCalendar(t *testing.T) {
+	if err := Parse([]byte("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//t//EN\r\nEND:VCALENDAR\r\n")); err != nil {
+		t.Fatalf("empty VCALENDAR should parse: %v", err)
+	}
+	if err := Parse([]byte("not a calendar")); err == nil {
+		t.Fatal("expected parse error")
+	}
+}
+
 func TestMerge_MalformedPropertyDoesNotDropEvent(t *testing.T) {
 	out := mustMerge(t, "Google-ish", []NamedCalendar{
 		{ID: "srcA", ICS: testdataICS(t, "google_malformed.ics")},

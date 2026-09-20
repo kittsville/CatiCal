@@ -54,6 +54,7 @@ func main() {
 		Store:              st,
 		Admin:              st,
 		Refresh:            refresher,
+		Fetch:              fetcher,
 		BaseURL:            os.Getenv("BASE_URL"),
 		Logger:             logger,
 		TurnstileSecret:    os.Getenv("TURNSTILE_SECRET"),

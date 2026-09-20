@@ -36,6 +36,7 @@ func turnstileHandler(st *memStore, secret string, v TurnstileVerifier) http.Han
 		Store:             st,
 		Admin:             st,
 		Refresh:           &fakeRefresh{body: []byte("BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n")},
+		Fetch:             okOriginFetch(),
 		Now:               func() time.Time { return time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC) },
 		TurnstileSecret:   secret,
 		TurnstileSiteKey:  "site-key-test",
@@ -106,6 +107,7 @@ func TestTurnstileOffWhenSecretEmpty(t *testing.T) {
 		Store:             st,
 		Admin:             st,
 		Refresh:           &fakeRefresh{body: []byte("BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n")},
+		Fetch:             okOriginFetch(),
 		Now:               func() time.Time { return time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC) },
 		TurnstileVerifier: v,
 	})

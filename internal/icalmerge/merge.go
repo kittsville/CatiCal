@@ -2,6 +2,7 @@ package icalmerge
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -48,6 +49,15 @@ func Merge(name string, sources []NamedCalendar) ([]byte, error) {
 
 	serialized := out.Serialize()
 	return []byte(crlf(serialized)), nil
+}
+
+// Parse reports whether raw is an iCalendar document the merger can read.
+func Parse(raw []byte) error {
+	if !bytes.Contains(bytes.ToUpper(raw), []byte("BEGIN:VCALENDAR")) {
+		return errors.New("missing VCALENDAR")
+	}
+	_, err := parseICS(raw)
+	return err
 }
 
 func parseICS(raw []byte) (*ics.Calendar, error) {

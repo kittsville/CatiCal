@@ -3,6 +3,7 @@ package httpserver
 import (
 	"context"
 	"encoding/hex"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"sci1.uk/catical/internal/fetch"
 	"sci1.uk/catical/internal/store"
 	"sci1.uk/catical/internal/tokens"
 )
@@ -340,6 +342,8 @@ func TestCreateRejectsInvalidInput(t *testing.T) {
 		{"http url", url.Values{"name": {"n"}, "url": {"http://example.com/a.ics"}}},
 		{"ssrf", url.Values{"name": {"n"}, "url": {"https://127.0.0.1/a.ics"}}},
 		{"too many", url.Values{"name": {"n"}, "url": urls9}},
+		{"not found", url.Values{"name": {"n"}, "url": {"https://1.1.1.1/missing.ics"}}},
+		{"not ics", url.Values{"name": {"n"}, "url": {"https://1.1.1.1/not.ics"}}},
 	}
 	before := st.len()
 	for _, tc := range cases {
@@ -347,6 +351,12 @@ func TestCreateRejectsInvalidInput(t *testing.T) {
 			rec := postForm(t, h, "/", tc.form)
 			if rec.Code < 400 {
 				t.Fatalf("status = %d, want 4xx, body %s", rec.Code, rec.Body.String())
+			}
+			if tc.name == "not found" && !strings.Contains(rec.Body.String(), "could not download a source calendar") {
+				t.Fatalf("expected download error, got %s", rec.Body.String())
+			}
+			if tc.name == "not ics" && !strings.Contains(rec.Body.String(), "not a valid iCalendar") {
+				t.Fatalf("expected parse error, got %s", rec.Body.String())
 			}
 		})
 	}
@@ -360,8 +370,41 @@ func htmlHandler(st *memStore) http.Handler {
 		Store:   st,
 		Admin:   st,
 		Refresh: &fakeRefresh{body: []byte("BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n")},
+		Fetch:   okOriginFetch(),
 		Now:     func() time.Time { return time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC) },
 	})
+}
+
+const validTestICS = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//test//EN\r\nEND:VCALENDAR\r\n"
+
+type stubOriginFetch struct {
+	byURL map[string]fetch.Result
+}
+
+func okOriginFetch() OriginFetch {
+	return &stubOriginFetch{}
+}
+
+func (s *stubOriginFetch) GetAll(_ context.Context, urls []string) []fetch.Result {
+	out := make([]fetch.Result, len(urls))
+	for i, u := range urls {
+		if s.byURL != nil {
+			if r, ok := s.byURL[u]; ok {
+				out[i] = r
+				continue
+			}
+		}
+		if strings.Contains(u, "missing.ics") {
+			out[i] = fetch.Result{Status: 404, Err: fmt.Errorf("unexpected status 404")}
+			continue
+		}
+		if strings.Contains(u, "not.ics") {
+			out[i] = fetch.Result{Status: 200, Body: []byte("not a calendar")}
+			continue
+		}
+		out[i] = fetch.Result{Status: 200, Body: []byte(validTestICS)}
+	}
+	return out
 }
 
 func postForm(t *testing.T, h http.Handler, path string, form url.Values) *httptest.ResponseRecorder {

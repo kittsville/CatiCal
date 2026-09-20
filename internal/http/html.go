@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 
 	"sci1.uk/catical/internal/fetch"
+	"sci1.uk/catical/internal/icalmerge"
 	"sci1.uk/catical/internal/store"
 	"sci1.uk/catical/internal/tokens"
 )
@@ -148,7 +149,7 @@ func serveCreate(w http.ResponseWriter, r *http.Request, cfg Config) {
 		serveCreateForm(w, cfg, "name is required", http.StatusBadRequest)
 		return
 	}
-	srcs, err := parseFormSources(r.Context(), r)
+	srcs, err := parseFormSources(r.Context(), r, cfg)
 	if err != nil {
 		serveCreateForm(w, cfg, err.Error(), http.StatusBadRequest)
 		return
@@ -239,7 +240,7 @@ func serveManagePOST(w http.ResponseWriter, r *http.Request, cfg Config) {
 			})
 			return
 		}
-		srcs, err := parseFormSources(r.Context(), r)
+		srcs, err := parseFormSources(r.Context(), r, cfg)
 		if err != nil {
 			renderManage(w, cfg, http.StatusBadRequest, pageData{
 				Title: "Managed combined calendar", Error: err.Error(),
@@ -339,7 +340,7 @@ func parseIDAndSecret(r *http.Request) (uuid.UUID, []byte, error) {
 	return id, secret, nil
 }
 
-func parseFormSources(ctx context.Context, r *http.Request) ([]store.CreateSource, error) {
+func parseFormSources(ctx context.Context, r *http.Request, cfg Config) ([]store.CreateSource, error) {
 	urls := r.Form["url"]
 	labels := r.Form["label"]
 	out := make([]store.CreateSource, 0, len(urls))
@@ -363,7 +364,27 @@ func parseFormSources(ctx context.Context, r *http.Request) ([]store.CreateSourc
 	if len(out) == 0 {
 		return nil, fmt.Errorf("at least one source URL is required")
 	}
+	rawURLs := make([]string, len(out))
+	for i, s := range out {
+		rawURLs[i] = s.URL
+	}
+	results := fetchOrigins(ctx, cfg, rawURLs)
+	for _, res := range results {
+		if res.Err != nil {
+			return nil, fmt.Errorf("could not download a source calendar")
+		}
+		if err := icalmerge.Parse(res.Body); err != nil {
+			return nil, fmt.Errorf("a source URL is not a valid iCalendar")
+		}
+	}
 	return out, nil
+}
+
+func fetchOrigins(ctx context.Context, cfg Config, urls []string) []fetch.Result {
+	if cfg.Fetch != nil {
+		return cfg.Fetch.GetAll(ctx, urls)
+	}
+	return fetch.GetAll(ctx, urls)
 }
 
 func validateHTTPSSource(ctx context.Context, raw string) error {

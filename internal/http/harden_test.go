@@ -16,6 +16,7 @@ func TestCreateRateLimitSamePeerReturns429(t *testing.T) {
 		Store:     st,
 		Admin:     st,
 		Refresh:   &fakeRefresh{body: []byte("BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n")},
+		Fetch:     okOriginFetch(),
 		Now:       func() time.Time { return time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC) },
 		POSTLimit: 3,
 	})
@@ -45,6 +46,7 @@ func TestManagePOSTRateLimitSamePeerReturns429(t *testing.T) {
 		Store:     st,
 		Admin:     st,
 		Refresh:   &fakeRefresh{body: []byte("BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n")},
+		Fetch:     okOriginFetch(),
 		Now:       func() time.Time { return time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC) },
 		POSTLimit: 3,
 	})
@@ -101,6 +103,7 @@ func TestCreateAndGetLogsNeverContainSourceURLOrTokens(t *testing.T) {
 		Store:   st,
 		Admin:   st,
 		Refresh: &fakeRefresh{body: []byte("BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n")},
+		Fetch:   okOriginFetch(),
 		Now:     func() time.Time { return time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC) },
 		Logger:  log,
 	})
