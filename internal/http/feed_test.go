@@ -50,6 +50,15 @@ func TestFeedGETValidSecret(t *testing.T) {
 	if rec.Header().Get("Cache-Control") != "private, max-age=300" {
 		t.Fatalf("Cache-Control = %q", rec.Header().Get("Cache-Control"))
 	}
+	if rec.Header().Get("X-Content-Type-Options") != "nosniff" {
+		t.Fatalf("X-Content-Type-Options = %q", rec.Header().Get("X-Content-Type-Options"))
+	}
+	if rec.Header().Get("Referrer-Policy") != "no-referrer" {
+		t.Fatalf("Referrer-Policy = %q", rec.Header().Get("Referrer-Policy"))
+	}
+	if rec.Header().Get("X-Robots-Tag") != "noindex" {
+		t.Fatalf("X-Robots-Tag = %q", rec.Header().Get("X-Robots-Tag"))
+	}
 	got := rec.Body.Bytes()
 	if !bytes.HasPrefix(got, []byte("BEGIN:VCALENDAR")) {
 		t.Fatalf("body start: %q", got)

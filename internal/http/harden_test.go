@@ -224,6 +224,9 @@ func TestRobotsTxtDisallowsManage(t *testing.T) {
 	if !strings.Contains(body, "Disallow: /m/") {
 		t.Fatalf("robots.txt missing Disallow /m/: %s", body)
 	}
+	if !strings.Contains(body, "Disallow: /c/") {
+		t.Fatalf("robots.txt missing Disallow /c/: %s", body)
+	}
 }
 
 func TestCreateAndGetLogsNeverContainSourceURLOrTokens(t *testing.T) {

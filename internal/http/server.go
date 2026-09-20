@@ -193,6 +193,9 @@ func serveICS(w http.ResponseWriter, r *http.Request, cfg Config, icsIPLim, icsF
 
 	w.Header().Set("Content-Type", "text/calendar; charset=utf-8")
 	w.Header().Set("Cache-Control", "private, max-age=300")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Referrer-Policy", "no-referrer")
+	w.Header().Set("X-Robots-Tag", "noindex")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(body)
 }
