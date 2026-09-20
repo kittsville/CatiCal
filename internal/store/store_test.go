@@ -333,26 +333,8 @@ func TestRotateTokens(t *testing.T) {
 		t.Fatal("manage token must be unchanged after feed rotate")
 	}
 
-	newManageSalt, newManageSecret, newManageHash := tokenPair(t)
-	if err := s.RotateManageToken(ctx, feed.ID, newManageSalt, newManageHash); err != nil {
-		t.Fatal(err)
-	}
-	got, err = s.GetFeed(ctx, feed.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if tokens.Verify(got.ManageTokenSalt, got.ManageTokenHash, manageSecret) {
-		t.Fatal("old manage secret must not verify")
-	}
-	if !tokens.Verify(got.ManageTokenSalt, got.ManageTokenHash, newManageSecret) {
-		t.Fatal("new manage secret should verify")
-	}
-
 	if err := s.RotateFeedToken(ctx, uuid.New(), newFeedSalt, newFeedHash); err != store.ErrNotFound {
 		t.Fatalf("missing rotate feed: %v", err)
-	}
-	if err := s.RotateManageToken(ctx, uuid.New(), newManageSalt, newManageHash); err != store.ErrNotFound {
-		t.Fatalf("missing rotate manage: %v", err)
 	}
 }
 

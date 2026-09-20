@@ -216,20 +216,6 @@ func (s *Store) RotateFeedToken(ctx context.Context, id uuid.UUID, salt, hash []
 	return nil
 }
 
-// RotateManageToken replaces the manage capability hash. The new secret is not stored.
-func (s *Store) RotateManageToken(ctx context.Context, id uuid.UUID, salt, hash []byte) error {
-	tag, err := s.pool.Exec(ctx, `
-		UPDATE feeds SET manage_token_salt = $2, manage_token_hash = $3 WHERE id = $1
-	`, id, salt, hash)
-	if err != nil {
-		return err
-	}
-	if tag.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return nil
-}
-
 // GetFeed loads a feed and its sources ordered by position.
 func (s *Store) GetFeed(ctx context.Context, id uuid.UUID) (Feed, error) {
 	row := s.pool.QueryRow(ctx, `

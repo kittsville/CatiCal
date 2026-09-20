@@ -299,30 +299,6 @@ func TestRotateFeedToken(t *testing.T) {
 	}
 }
 
-func TestRotateManageToken(t *testing.T) {
-	st := newMemStore()
-	h := htmlHandler(st)
-	created := postForm(t, h, "/", url.Values{
-		"name": {"r"},
-		"url":  {"https://1.1.1.1/a.ics"},
-	})
-	manageM := manageURLRe.FindStringSubmatch(created.Body.String())
-	oldPath := "/m/" + manageM[1] + "/" + manageM[2]
-	rec := postForm(t, h, oldPath, url.Values{"action": {"rotate_manage"}})
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d %s", rec.Code, rec.Body.String())
-	}
-	newM := manageURLRe.FindStringSubmatch(rec.Body.String())
-	if newM == nil || newM[2] == manageM[2] {
-		t.Fatalf("expected new manage URL: %s", rec.Body.String())
-	}
-	oldGET := httptest.NewRecorder()
-	h.ServeHTTP(oldGET, httptest.NewRequest(http.MethodGet, oldPath, nil))
-	if oldGET.Code != http.StatusNotFound {
-		t.Fatalf("old manage %d", oldGET.Code)
-	}
-}
-
 func TestCreateRejectsInvalidInput(t *testing.T) {
 	st := newMemStore()
 	h := htmlHandler(st)
@@ -495,19 +471,6 @@ func (m *memStore) RotateFeedToken(_ context.Context, id uuid.UUID, salt, hash [
 	}
 	f.FeedTokenSalt = append([]byte(nil), salt...)
 	f.FeedTokenHash = append([]byte(nil), hash...)
-	m.feeds[id] = f
-	return nil
-}
-
-func (m *memStore) RotateManageToken(_ context.Context, id uuid.UUID, salt, hash []byte) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	f, ok := m.feeds[id]
-	if !ok {
-		return store.ErrNotFound
-	}
-	f.ManageTokenSalt = append([]byte(nil), salt...)
-	f.ManageTokenHash = append([]byte(nil), hash...)
 	m.feeds[id] = f
 	return nil
 }

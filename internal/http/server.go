@@ -30,7 +30,6 @@ type Admin interface {
 	UpdateFeed(ctx context.Context, id uuid.UUID, p store.UpdateFeedParams) error
 	DeleteFeed(ctx context.Context, id uuid.UUID) error
 	RotateFeedToken(ctx context.Context, id uuid.UUID, salt, hash []byte) error
-	RotateManageToken(ctx context.Context, id uuid.UUID, salt, hash []byte) error
 }
 
 // Refresher returns a merged ICS body for a feed id.

@@ -50,7 +50,6 @@ type pageData struct {
 	NewURL          string
 	FormAction      string
 	Warning         string
-	RotateKind      string
 	SiteKey         string
 	TurnstileAction string
 	Commit          string
@@ -289,26 +288,8 @@ func serveManagePOST(w http.ResponseWriter, r *http.Request, cfg Config) {
 		_ = rotateTmpl.Execute(w, withFooter(cfg, pageData{
 			Title:      "Feed URL rotated",
 			NewURL:     feedURL(cfg.baseURL(), feed.ID.String(), sec),
-			RotateKind: "feed",
 			FormAction: r.URL.Path,
 			Warning:    "Copy the new feed URL now. It will not be shown again. Your manage URL is unchanged.",
-		}))
-	case "rotate_manage":
-		salt, sec, hash, err := tokens.Generate()
-		if err != nil {
-			http.Error(w, "internal error", http.StatusInternalServerError)
-			return
-		}
-		if err := cfg.Admin.RotateManageToken(r.Context(), feed.ID, salt, hash); err != nil {
-			http.Error(w, "internal error", http.StatusInternalServerError)
-			return
-		}
-		writeHTMLHeaders(w, cfg.TurnstileSiteKey)
-		_ = rotateTmpl.Execute(w, withFooter(cfg, pageData{
-			Title:      "Manage URL rotated",
-			NewURL:     manageURL(cfg.baseURL(), feed.ID.String(), sec),
-			RotateKind: "manage",
-			Warning:    "Copy the new manage URL now. The previous manage link no longer works.",
 		}))
 	default:
 		http.Error(w, "not found", http.StatusNotFound)
@@ -480,7 +461,7 @@ const formBody = `
 {{if .SiteKey}}
 <div class="cf-turnstile" data-sitekey="{{.SiteKey}}" data-action="{{.TurnstileAction}}"></div>
 {{end}}
-<p><button ` + mdcRaised + `><span class="mdc-button__label">Create mix</span></button></p>
+<p><button ` + mdcRaised + `><span class="mdc-button__label">Combine Calendars</span></button></p>
 </form>`
 
 const createdBody = `
@@ -511,9 +492,8 @@ const manageBody = `
 {{end}}
 <p>
 <button ` + mdcRaised + ` name="action" value="save"><span class="mdc-button__label">Save</span></button>
-<button ` + mdcOutlined + ` name="action" value="delete"><span class="mdc-button__label">Delete mix</span></button>
-<button ` + mdcOutlined + ` name="action" value="rotate_feed"><span class="mdc-button__label">Rotate feed URL</span></button>
-<button ` + mdcOutlined + ` name="action" value="rotate_manage"><span class="mdc-button__label">Rotate manage URL</span></button>
+<button ` + mdcOutlined + ` name="action" value="delete"><span class="mdc-button__label">Delete</span></button>
+<button ` + mdcOutlined + ` name="action" value="rotate_feed"><span class="mdc-button__label">Reset feed URL</span></button>
 </p>
 </form>
 <p>The ICS feed URL is not shown here. Rotate the feed token if it leaked.</p>`
