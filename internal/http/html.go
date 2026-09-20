@@ -533,8 +533,9 @@ label{display:block;margin:.6rem 0 .2rem}
 input[type=text],input[type=url]{display:block;width:100%;max-width:100%;padding:.4rem}
 .row{display:grid;grid-template-columns:minmax(0,1fr) minmax(5rem,8rem);gap:.5rem;margin:.5rem 0;}
 .row>*{min-width:0;max-width:100%}
-.err{color:#a40000}
-.warn{background:#fff3cd;padding:.75rem;border:1px solid #c9a227;overflow-wrap:anywhere}
+.warn,.err{padding:.75rem;border:1px solid;overflow-wrap:anywhere}
+.warn{background:#fff3cd;border-color:#c9a227}
+.err{background:#f8d7da;border-color:#a40000;color:#a40000}
 code,pre{display:block;word-break:break-all;white-space:pre-wrap;overflow-wrap:anywhere;max-width:100%;background:#f3f3f3;border-radius:8px;padding:.75rem}
 .codeblock{position:relative;max-width:100%}
 .codeblock code{padding-right:2.5rem;margin:0}
