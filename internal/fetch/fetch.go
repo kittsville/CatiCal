@@ -31,6 +31,40 @@ const (
 	httpsPort            = "443"
 )
 
+// ErrRateLimited is returned when a WithQuota callback rejects a fetch burst.
+var ErrRateLimited = errors.New("origin fetch rate limited")
+
+type quotaKey struct{}
+
+// WithQuota attaches an origin-fetch budget. GetAll consumes n slots for the
+// URLs it would actually request (capped at MaxSources). A nil allow is ignored.
+func WithQuota(ctx context.Context, allow func(n int) bool) context.Context {
+	if allow == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, quotaKey{}, allow)
+}
+
+// ConsumeQuota deducts n origin GET slots from a WithQuota callback.
+// Adapters and tests should call this before performing origin requests.
+func ConsumeQuota(ctx context.Context, n int) error {
+	return consumeQuota(ctx, n)
+}
+
+func consumeQuota(ctx context.Context, n int) error {
+	if n <= 0 {
+		return nil
+	}
+	allow, _ := ctx.Value(quotaKey{}).(func(int) bool)
+	if allow == nil {
+		return nil
+	}
+	if !allow(n) {
+		return ErrRateLimited
+	}
+	return nil
+}
+
 // Result is the outcome of one URL in a GetAll call, aligned by index.
 type Result struct {
 	Body   []byte
@@ -101,6 +135,19 @@ func (f *Fetcher) GetAll(ctx context.Context, urls []string) []Result {
 	max := f.MaxSources
 	if max <= 0 {
 		max = MaxSources
+	}
+	n := len(urls)
+	if n > max {
+		n = max
+	}
+	if err := consumeQuota(ctx, n); err != nil {
+		for i := 0; i < n; i++ {
+			out[i].Err = err
+		}
+		for i := n; i < len(urls); i++ {
+			out[i].Err = fmt.Errorf("source cap %d exceeded", max)
+		}
+		return out
 	}
 	var wg sync.WaitGroup
 	for i, raw := range urls {

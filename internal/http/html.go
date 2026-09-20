@@ -4,6 +4,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"html/template"
 	"net/http"
@@ -150,6 +151,10 @@ func serveCreate(w http.ResponseWriter, r *http.Request, cfg Config) {
 		return
 	}
 	srcs, err := parseFormSources(r.Context(), r, cfg)
+	if errors.Is(err, errOriginRateLimited) {
+		tooMany(w)
+		return
+	}
 	if err != nil {
 		serveCreateForm(w, cfg, err.Error(), http.StatusBadRequest)
 		return
@@ -241,6 +246,10 @@ func serveManagePOST(w http.ResponseWriter, r *http.Request, cfg Config) {
 			return
 		}
 		srcs, err := parseFormSources(r.Context(), r, cfg)
+		if errors.Is(err, errOriginRateLimited) {
+			tooMany(w)
+			return
+		}
 		if err != nil {
 			renderManage(w, cfg, http.StatusBadRequest, pageData{
 				Title: "Managed combined calendar", Error: err.Error(),
@@ -363,6 +372,9 @@ func parseFormSources(ctx context.Context, r *http.Request, cfg Config) ([]store
 	}
 	if len(out) == 0 {
 		return nil, fmt.Errorf("at least one source URL is required")
+	}
+	if cfg.originLim != nil && !cfg.originLim.allowN(peerIP(r), len(out)) {
+		return nil, errOriginRateLimited
 	}
 	rawURLs := make([]string, len(out))
 	for i, s := range out {

@@ -49,6 +49,9 @@ type Config struct {
 	POSTLimit    int // per IP per minute; 0 uses defaultPOSTLimit
 	GETLimit     int // ICS GET per IP per minute; 0 uses defaultICSGETLimit
 	GETFeedLimit int // ICS GET per feed per minute; 0 uses defaultICSFeedLimit
+	OriginLimit  int // origin ICS GETs per IP per minute; 0 uses defaultOriginFetchLimit
+
+	originLim *ipLimiter // set by New; shared by create/save and ICS refresh
 
 	// TurnstileSecret, when set, requires a Cloudflare Turnstile token on
 	// create and manage POSTs. Unset disables Turnstile (local/dev). ICS GET
@@ -92,6 +95,7 @@ func New(cfg Config) http.Handler {
 	manageLim := newIPLimiter(cfg.POSTLimit, 0, cfg.Now)
 	icsIPLim := newIPLimiter(orDefault(cfg.GETLimit, defaultICSGETLimit), 0, cfg.Now)
 	icsFeedLim := newIPLimiter(orDefault(cfg.GETFeedLimit, defaultICSFeedLimit), 0, cfg.Now)
+	cfg.originLim = newIPLimiter(orDefault(cfg.OriginLimit, defaultOriginFetchLimit), 0, cfg.Now)
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", HealthHandler)
 	mux.HandleFunc("GET /robots.txt", serveRobots)
@@ -164,7 +168,15 @@ func serveICS(w http.ResponseWriter, r *http.Request, cfg Config, icsIPLim, icsF
 		return
 	}
 
-	body, err := cfg.Refresh.Refresh(r.Context(), id)
+	ip := peerIP(r)
+	ctx := fetch.WithQuota(r.Context(), func(n int) bool {
+		return cfg.originLim.allowN(ip, n)
+	})
+	body, err := cfg.Refresh.Refresh(ctx, id)
+	if errors.Is(err, fetch.ErrRateLimited) {
+		tooMany(w)
+		return
+	}
 	if err != nil || len(body) == 0 {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.WriteHeader(http.StatusBadGateway)

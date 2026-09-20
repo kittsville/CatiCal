@@ -100,6 +100,10 @@ func (s *Service) refreshOnce(ctx context.Context, id uuid.UUID) ([]byte, error)
 		results = append(results, pad...)
 	}
 
+	if allRateLimited(results[:len(sources)]) {
+		return nil, fetch.ErrRateLimited
+	}
+
 	var named []icalmerge.NamedCalendar
 	for i, src := range sources {
 		res := results[i]
@@ -162,6 +166,18 @@ func fetchErrorMessage(res fetch.Result) string {
 		return fmt.Sprintf("http status %d", res.Status)
 	}
 	return "fetch error"
+}
+
+func allRateLimited(results []fetch.Result) bool {
+	if len(results) == 0 {
+		return false
+	}
+	for _, res := range results {
+		if !errors.Is(res.Err, fetch.ErrRateLimited) {
+			return false
+		}
+	}
+	return true
 }
 
 func usableSourceBody(src store.Source, now time.Time) []byte {

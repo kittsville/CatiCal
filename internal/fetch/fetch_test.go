@@ -3,6 +3,7 @@ package fetch
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"net"
@@ -259,6 +260,29 @@ func TestGetAllCapsConcurrentFetches(t *testing.T) {
 	}
 	if maxSeen.Load() > 1 {
 		t.Fatalf("concurrent fetches = %d, want 1", maxSeen.Load())
+	}
+}
+
+func TestGetAllQuotaRejectsBurstWithoutDial(t *testing.T) {
+	var dials atomic.Int32
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		dials.Add(1)
+		io.WriteString(w, "ok")
+	}))
+	defer s.Close()
+
+	ctx := WithQuota(context.Background(), func(n int) bool { return n < 2 })
+	results := testFetcher(t, s).GetAll(ctx, []string{s.URL, s.URL})
+	if len(results) != 2 {
+		t.Fatalf("len=%d", len(results))
+	}
+	for i, res := range results {
+		if !errors.Is(res.Err, ErrRateLimited) {
+			t.Fatalf("url %d err=%v, want ErrRateLimited", i, res.Err)
+		}
+	}
+	if dials.Load() != 0 {
+		t.Fatalf("dials = %d, want 0", dials.Load())
 	}
 }
 

@@ -1,6 +1,7 @@
 package httpserver
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"sci1.uk/catical/internal/fetch"
 	"sci1.uk/catical/internal/store"
 	"sci1.uk/catical/internal/tokens"
 )
@@ -113,6 +115,57 @@ func TestICSGETRateLimitSamePeerReturns429(t *testing.T) {
 	other := getFrom(t, h, path, "203.0.113.41:9")
 	if other.Code == http.StatusTooManyRequests {
 		t.Fatal("different peer should not share the ICS GET bucket")
+	}
+}
+
+func TestCreateOriginFetchLimitDoesNotHitOrigins(t *testing.T) {
+	st := newMemStore()
+	ft := &countingOriginFetch{}
+	h := New(Config{
+		Store:       st,
+		Admin:       st,
+		Refresh:     &fakeRefresh{body: []byte("BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n")},
+		Fetch:       ft,
+		OriginLimit: 2,
+		Now:         func() time.Time { return time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC) },
+	})
+	form := url.Values{
+		"name": {"mix"},
+		"url":  {"https://1.1.1.1/a.ics", "https://1.1.1.1/b.ics", "https://1.1.1.1/c.ics"},
+	}
+	rec := postFormFrom(t, h, "/", form, "203.0.113.60:9")
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("status = %d, want 429; body %s", rec.Code, rec.Body.String())
+	}
+	if ft.calls != 0 {
+		t.Fatalf("origin GetAll calls = %d, want 0", ft.calls)
+	}
+	if st.len() != 0 {
+		t.Fatal("must not persist a feed after origin quota reject")
+	}
+}
+
+func TestICSGETOriginQuotaReturns429(t *testing.T) {
+	id := uuid.New()
+	salt, secret, hash, err := tokens.Generate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := &fakeFeedStore{feed: store.Feed{ID: id, FeedTokenSalt: salt, FeedTokenHash: hash}}
+	rf := &quotaAwareRefresh{body: []byte("BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n")}
+	h := New(Config{
+		Store:       st,
+		Refresh:     rf,
+		OriginLimit: 1,
+		Now:         func() time.Time { return time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC) },
+	})
+	path := feedPath(id, secret) + ".ics"
+	rec := getFrom(t, h, path, "203.0.113.70:9")
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("status = %d, want 429", rec.Code)
+	}
+	if rf.calls != 1 {
+		t.Fatalf("refresh calls = %d, want 1", rf.calls)
 	}
 }
 
@@ -229,4 +282,26 @@ func postFormFrom(t *testing.T, h http.Handler, path string, form url.Values, re
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	return rec
+}
+
+type countingOriginFetch struct {
+	calls int
+}
+
+func (c *countingOriginFetch) GetAll(_ context.Context, urls []string) []fetch.Result {
+	c.calls++
+	return okOriginFetch().GetAll(context.Background(), urls)
+}
+
+type quotaAwareRefresh struct {
+	body  []byte
+	calls int
+}
+
+func (f *quotaAwareRefresh) Refresh(ctx context.Context, _ uuid.UUID) ([]byte, error) {
+	f.calls++
+	if err := fetch.ConsumeQuota(ctx, 2); err != nil {
+		return nil, err
+	}
+	return f.body, nil
 }

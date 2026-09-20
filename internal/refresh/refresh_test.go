@@ -206,6 +206,22 @@ func TestSingleflightOneFetchBurst(t *testing.T) {
 	}
 }
 
+func TestAllOriginsRateLimited(t *testing.T) {
+	now := time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC)
+	st := newMemStore(feedWithMerge(nil, time.Time{}, now, src("https://example.com/a.ics")))
+	ft := &fakeFetch{body: []byte("BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n")}
+	svc := refresh.New(st, ft, func() time.Time { return now })
+	ctx := fetch.WithQuota(context.Background(), func(n int) bool { return false })
+
+	_, err := svc.Refresh(ctx, st.feed.ID)
+	if !errors.Is(err, fetch.ErrRateLimited) {
+		t.Fatalf("err = %v, want ErrRateLimited", err)
+	}
+	if ft.calls.Load() != 0 {
+		t.Fatalf("fetcher calls = %d, want 0", ft.calls.Load())
+	}
+}
+
 func TestEmptyMergeError(t *testing.T) {
 	now := time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC)
 	st := newMemStore(feedWithMerge(nil, time.Time{}, now, src("https://example.com/a.ics")))
@@ -295,7 +311,14 @@ type fakeFetch struct {
 	mu       sync.Mutex
 }
 
-func (f *fakeFetch) GetAll(_ context.Context, urls []string) []fetch.Result {
+func (f *fakeFetch) GetAll(ctx context.Context, urls []string) []fetch.Result {
+	if err := fetch.ConsumeQuota(ctx, len(urls)); err != nil {
+		out := make([]fetch.Result, len(urls))
+		for i := range out {
+			out[i].Err = err
+		}
+		return out
+	}
 	f.calls.Add(1)
 	if f.delay > 0 {
 		time.Sleep(f.delay)
