@@ -526,7 +526,7 @@ const layoutCSS = `*,*::before,*::after{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
 html,body{margin:0;max-width:100%}
 main,footer{width:100%;max-width:42rem;margin:1.5rem auto;padding:0 1rem;min-width:0}
-footer{margin-top:2rem;margin-bottom:1rem;font-size:.9rem;overflow-wrap:anywhere}
+footer{margin-top:2rem;margin-bottom:1rem;font-size:.9rem;overflow-wrap:anywhere;text-align:center}
 h1.mdc-typography--headline1{font-size:clamp(1.75rem,6vw,2.75rem);line-height:1.15;font-weight:400;letter-spacing:normal;margin:.25rem 0 .75rem;overflow-wrap:anywhere}
 p,label,dd,dt{overflow-wrap:anywhere;max-width:100%}
 label{display:block;margin:.6rem 0 .2rem}
