@@ -51,9 +51,12 @@ type Config struct {
 	// TurnstileSecret, when set, requires a Cloudflare Turnstile token on
 	// create and manage POSTs. Unset disables Turnstile (local/dev). ICS GET
 	// is never gated. TurnstileVerifier is optional; production uses siteverify.
-	TurnstileSecret   string
-	TurnstileSiteKey  string
-	TurnstileVerifier TurnstileVerifier
+	// TurnstileHostnames is a comma-separated frontend hostname allowlist
+	// checked against siteverify; empty uses the host of BASE_URL except loopback.
+	TurnstileSecret    string
+	TurnstileSiteKey   string
+	TurnstileHostnames string
+	TurnstileVerifier  TurnstileVerifier
 }
 
 func (c Config) baseURL() string {

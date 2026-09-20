@@ -51,13 +51,14 @@ func main() {
 	reaper.Start(ctx, reaper.Worker{Store: st, Logger: logger})
 
 	h := httpserver.New(httpserver.Config{
-		Store:            st,
-		Admin:            st,
-		Refresh:          refresher,
-		BaseURL:          os.Getenv("BASE_URL"),
-		Logger:           logger,
-		TurnstileSecret:  os.Getenv("TURNSTILE_SECRET"),
-		TurnstileSiteKey: os.Getenv("TURNSTILE_SITE_KEY"),
+		Store:              st,
+		Admin:              st,
+		Refresh:            refresher,
+		BaseURL:            os.Getenv("BASE_URL"),
+		Logger:             logger,
+		TurnstileSecret:    os.Getenv("TURNSTILE_SECRET"),
+		TurnstileSiteKey:   os.Getenv("TURNSTILE_SITE_KEY"),
+		TurnstileHostnames: os.Getenv("TURNSTILE_HOSTNAMES"),
 	})
 
 	srv := &http.Server{Addr: ":8080", Handler: h}

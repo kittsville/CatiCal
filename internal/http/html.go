@@ -38,19 +38,20 @@ func writeHTMLHeaders(w http.ResponseWriter, siteKey string) {
 }
 
 type pageData struct {
-	Title      string
-	Error      string
-	Notice     string
-	Name       string
-	Prefix     bool
-	Slots      []slot
-	FeedURL    string
-	ManageURL  string
-	NewURL     string
-	FormAction string
-	Warning    string
-	RotateKind string
-	SiteKey    string
+	Title           string
+	Error           string
+	Notice          string
+	Name            string
+	Prefix          bool
+	Slots           []slot
+	FeedURL         string
+	ManageURL       string
+	NewURL          string
+	FormAction      string
+	Warning         string
+	RotateKind      string
+	SiteKey         string
+	TurnstileAction string
 }
 
 type slot struct {
@@ -82,11 +83,12 @@ func serveCreateForm(w http.ResponseWriter, cfg Config, errMsg string, status in
 		w.WriteHeader(status)
 	}
 	_ = formTmpl.Execute(w, pageData{
-		Title:   "Create calendar mix",
-		Error:   errMsg,
-		Slots:   emptySlots(),
-		Prefix:  false,
-		SiteKey: cfg.TurnstileSiteKey,
+		Title:           "Create calendar mix",
+		Error:           errMsg,
+		Slots:           emptySlots(),
+		Prefix:          false,
+		SiteKey:         cfg.TurnstileSiteKey,
+		TurnstileAction: turnstileCreate,
 	})
 }
 
@@ -99,7 +101,7 @@ func serveCreate(w http.ResponseWriter, r *http.Request, cfg Config) {
 		serveCreateForm(w, cfg, "invalid form", http.StatusBadRequest)
 		return
 	}
-	if !checkTurnstile(w, r, cfg, func(msg string, code int) {
+	if !checkTurnstile(w, r, cfg, turnstileCreate, func(msg string, code int) {
 		serveCreateForm(w, cfg, msg, code)
 	}) {
 		return
@@ -180,7 +182,7 @@ func serveManagePOST(w http.ResponseWriter, r *http.Request, cfg Config) {
 		})
 		return
 	}
-	if !checkTurnstile(w, r, cfg, func(msg string, code int) {
+	if !checkTurnstile(w, r, cfg, turnstileManage, func(msg string, code int) {
 		renderManage(w, cfg, code, pageData{
 			Title: "Manage calendar mix", Error: msg,
 			Name: feed.Name, Prefix: feed.PrefixSummaries, Slots: slotsFromFeed(feed),
@@ -277,6 +279,7 @@ func serveManagePOST(w http.ResponseWriter, r *http.Request, cfg Config) {
 
 func renderManage(w http.ResponseWriter, cfg Config, status int, data pageData) {
 	data.SiteKey = cfg.TurnstileSiteKey
+	data.TurnstileAction = turnstileManage
 	writeHTMLHeaders(w, cfg.TurnstileSiteKey)
 	w.WriteHeader(status)
 	_ = manageTmpl.Execute(w, data)
@@ -399,7 +402,9 @@ func htmlShell(inner string) string {
 		`<link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">` +
 		`<link href="https://fonts.googleapis.com/css?family=Roboto:300,400,500" rel="stylesheet">` +
 		`<link href="` + mdcCSSURL + `" rel="stylesheet">` +
-		`<style>` + layoutCSS + `</style></head>` +
+		`<style>` + layoutCSS + `</style>` +
+		`{{if .SiteKey}}<script src="` + turnstileScript + `" async defer></script>{{end}}` +
+		`</head>` +
 		`<body class="mdc-typography"><main>` + inner + `</main></body></html>`
 }
 
@@ -428,8 +433,7 @@ const formBody = `
 </div>
 {{end}}
 {{if .SiteKey}}
-<div class="cf-turnstile" data-sitekey="{{.SiteKey}}"></div>
-<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+<div class="cf-turnstile" data-sitekey="{{.SiteKey}}" data-action="{{.TurnstileAction}}"></div>
 {{end}}
 <p><button ` + mdcRaised + `><span class="mdc-button__label">Create mix</span></button></p>
 </form>`
@@ -458,8 +462,7 @@ const manageBody = `
 </div>
 {{end}}
 {{if .SiteKey}}
-<div class="cf-turnstile" data-sitekey="{{.SiteKey}}"></div>
-<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+<div class="cf-turnstile" data-sitekey="{{.SiteKey}}" data-action="{{.TurnstileAction}}"></div>
 {{end}}
 <p>
 <button ` + mdcRaised + ` name="action" value="save"><span class="mdc-button__label">Save</span></button>

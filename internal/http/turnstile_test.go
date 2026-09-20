@@ -15,14 +15,16 @@ import (
 )
 
 type stubVerifier struct {
-	ok    bool
-	calls atomic.Int32
-	last  string
+	ok     bool
+	calls  atomic.Int32
+	last   string
+	action string
 }
 
-func (s *stubVerifier) Verify(_ context.Context, token, _ string) error {
+func (s *stubVerifier) Verify(_ context.Context, token, _, action string) error {
 	s.calls.Add(1)
 	s.last = token
+	s.action = action
 	if !s.ok {
 		return errors.New("turnstile failed")
 	}
@@ -75,8 +77,8 @@ func TestTurnstileOKAllowsCreate(t *testing.T) {
 	if st.len() != 1 {
 		t.Fatalf("want 1 feed, have %d", st.len())
 	}
-	if v.calls.Load() != 1 || v.last != "ok-token" {
-		t.Fatalf("verifier calls=%d token=%q", v.calls.Load(), v.last)
+	if v.calls.Load() != 1 || v.last != "ok-token" || v.action != "create" {
+		t.Fatalf("verifier calls=%d token=%q action=%q", v.calls.Load(), v.last, v.action)
 	}
 }
 
@@ -147,6 +149,9 @@ func TestTurnstileGatesManagePOSTNotICSGET(t *testing.T) {
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("manage POST status = %d, want 403", rec.Code)
 	}
+	if v.action != "manage" {
+		t.Fatalf("manage POST action = %q, want manage", v.action)
+	}
 
 	ics := httptest.NewRecorder()
 	hOn.ServeHTTP(ics, httptest.NewRequest(http.MethodGet, "/c/"+feedM[1]+"/"+feedM[2]+".ics", nil))
@@ -174,18 +179,72 @@ func TestTurnstileWidgetAndCSPWhenSiteKeySet(t *testing.T) {
 	if !strings.Contains(body, `data-sitekey="site-key-test"`) {
 		t.Fatal("expected site key on widget")
 	}
+	if !strings.Contains(body, `data-action="create"`) {
+		t.Fatal("expected create action on widget")
+	}
+}
+
+func TestTurnstileManageWidgetAction(t *testing.T) {
+	st := newMemStore()
+	hOff := htmlHandler(st)
+	created := postForm(t, hOff, "/", url.Values{
+		"name": {"x"},
+		"url":  {"https://1.1.1.1/a.ics"},
+	})
+	manageM := manageURLRe.FindStringSubmatch(created.Body.String())
+	if manageM == nil {
+		t.Fatal(created.Body.String())
+	}
+	h := New(Config{
+		Admin:            st,
+		TurnstileSiteKey: "site-key-test",
+	})
+	req := httptest.NewRequest(http.MethodGet, "/m/"+manageM[1]+"/"+manageM[2], nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), `data-action="manage"`) {
+		t.Fatal("expected manage action on widget")
+	}
+}
+
+func TestTurnstileTokenTooLong(t *testing.T) {
+	st := newMemStore()
+	v := &stubVerifier{ok: true}
+	h := turnstileHandler(st, "secret", v)
+	rec := postForm(t, h, "/", url.Values{
+		"name":                  {"mix"},
+		"url":                   {"https://1.1.1.1/a.ics"},
+		"cf-turnstile-response": {strings.Repeat("x", 2049)},
+	})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+	if st.len() != 0 {
+		t.Fatal("must not write feed with oversized token")
+	}
+	if v.calls.Load() != 0 {
+		t.Fatal("verifier must not run for oversized token")
+	}
 }
 
 func TestSiteverifyHTTP(t *testing.T) {
+	hosts := map[string]struct{}{"catical.sci1.uk": {}}
 	var gotBody string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
 		gotBody = string(b)
-		_ = json.NewEncoder(w).Encode(map[string]any{"success": true})
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success":  true,
+			"action":   "create",
+			"hostname": "catical.sci1.uk",
+		})
 	}))
 	t.Cleanup(srv.Close)
-	v := newSiteverify(srv.Client(), srv.URL, "sec")
-	if err := v.Verify(context.Background(), "tok", "203.0.113.9"); err != nil {
+	v := newSiteverify(srv.Client(), srv.URL, "sec", hosts)
+	if err := v.Verify(context.Background(), "tok", "203.0.113.9", "create"); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(gotBody, "secret=sec") || !strings.Contains(gotBody, "response=tok") {
@@ -196,8 +255,49 @@ func TestSiteverifyHTTP(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"success": false})
 	}))
 	t.Cleanup(failSrv.Close)
-	bad := newSiteverify(failSrv.Client(), failSrv.URL, "sec")
-	if err := bad.Verify(context.Background(), "tok", ""); err == nil {
+	bad := newSiteverify(failSrv.Client(), failSrv.URL, "sec", hosts)
+	if err := bad.Verify(context.Background(), "tok", "", "create"); err == nil {
 		t.Fatal("expected failure")
+	}
+
+	mismatch := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success":  true,
+			"action":   "other",
+			"hostname": "catical.sci1.uk",
+		})
+	}))
+	t.Cleanup(mismatch.Close)
+	wrongAction := newSiteverify(mismatch.Client(), mismatch.URL, "sec", hosts)
+	if err := wrongAction.Verify(context.Background(), "tok", "", "create"); err == nil {
+		t.Fatal("expected action mismatch")
+	}
+
+	wrongHost := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success":  true,
+			"action":   "create",
+			"hostname": "evil.example",
+		})
+	}))
+	t.Cleanup(wrongHost.Close)
+	hostClient := newSiteverify(wrongHost.Client(), wrongHost.URL, "sec", hosts)
+	if err := hostClient.Verify(context.Background(), "tok", "", "create"); err == nil {
+		t.Fatal("expected hostname mismatch")
+	}
+}
+
+func TestExpectedHostnamesFromBaseURL(t *testing.T) {
+	h := (Config{BaseURL: "https://catical.sci1.uk"}).expectedHostnames()
+	if _, ok := h["catical.sci1.uk"]; !ok {
+		t.Fatalf("got %#v", h)
+	}
+	local := (Config{BaseURL: "http://localhost:8080"}).expectedHostnames()
+	if len(local) != 0 {
+		t.Fatalf("loopback must not be implied: %#v", local)
+	}
+	explicit := (Config{TurnstileHostnames: "localhost, catical.sci1.uk"}).expectedHostnames()
+	if _, ok := explicit["localhost"]; !ok {
+		t.Fatal("explicit localhost allowed for local/dev")
 	}
 }

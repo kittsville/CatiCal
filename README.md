@@ -30,8 +30,9 @@ Env (production / Coolify):
 |---|---|
 | `DATABASE_URL` | Postgres URL (required) |
 | `BASE_URL` | Public origin, e.g. `https://catical.sci1.uk` |
-| `TURNSTILE_SITE_KEY` | Cloudflare widget (optional locally) |
+| `TURNSTILE_SITE_KEY` | Cloudflare widget (optional locally; production sitekey `0x4AAAAAAE9wkjLiDKI_GMpI`) |
 | `TURNSTILE_SECRET` | Server-side siteverify; unset = Turnstile off (local/dev) |
+| `TURNSTILE_HOSTNAMES` | Comma-separated hosts siteverify must return (optional; defaults to `BASE_URL` host, never loopback) |
 | `LOG_LEVEL` | `debug` / `info` / `warn` / `error` |
 
 Migrations apply on process start (version table; safe to run twice). Listen `:8080`. Healthcheck: `GET /healthz`.
@@ -40,7 +41,7 @@ Migrations apply on process start (version table; safe to run twice). Listen `:8
 
 Push to `main` runs GitHub Actions: tests, `docker build`, push `ghcr.io/kittsville/catical:latest`, then the same Coolify webhook curl as Recibase (`COOLIFY_TOKEN` + `COOLIFY_DEPLOY_WEBHOOK` repo secrets).
 
-Coolify app is a **Docker Image** (not a git build): image `ghcr.io/kittsville/catical`, tag `latest`, listen `8080`, healthcheck `GET /healthz`, domain `https://catical.sci1.uk`. Pair with a Postgres resource. Set `DATABASE_URL`, `BASE_URL=https://catical.sci1.uk`, Turnstile keys, and `LOG_LEVEL`. Migrations run on boot. The image includes `curl` and `wget` so Coolify’s healthcheck can exec inside the container.
+Coolify app is a **Docker Image** (not a git build): image `ghcr.io/kittsville/catical`, tag `latest`, listen `8080`, healthcheck `GET /healthz`, domain `https://catical.sci1.uk`. Pair with a Postgres resource. Set `DATABASE_URL`, `BASE_URL=https://catical.sci1.uk`, `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET`, and `LOG_LEVEL`. Optional `TURNSTILE_HOSTNAMES=catical.sci1.uk` if you do not want the host taken from `BASE_URL`. Migrations run on boot. The image includes `curl` and `wget` so Coolify’s healthcheck can exec inside the container.
 
 ## Tests
 
@@ -56,4 +57,6 @@ Without `DATABASE_URL`, store tests are skipped; other packages still run. The c
 
 ## Cloudflare Turnstile
 
-Create and manage **POST**s are gated when `TURNSTILE_SECRET` is set (pair with `TURNSTILE_SITE_KEY` for the widget). If `TURNSTILE_SECRET` is unset, Turnstile is off — intended for local/dev. Production should set both. ICS `GET` stays token-only; calendar clients never solve CAPTCHA.
+Create and manage **POST**s are gated when `TURNSTILE_SECRET` is set (pair with `TURNSTILE_SITE_KEY` for the widget). Siteverify requires `success`, the surface action (`create` or `manage`), and a hostname in `TURNSTILE_HOSTNAMES` or the `BASE_URL` host. If `TURNSTILE_SECRET` is unset, Turnstile is off — intended for local/dev. Production should set both keys. ICS `GET` stays token-only; calendar clients never solve CAPTCHA.
+
+The secret stays in Coolify (or local env). Do not commit it. Dummy siteverify responses with `invalid-input-response` mean the secret is valid; `invalid-input-secret` means it did not reach the process.
