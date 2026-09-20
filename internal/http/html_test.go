@@ -91,6 +91,44 @@ func TestCreateFormNarrowLayoutCSS(t *testing.T) {
 	}
 }
 
+func TestSourceSlotsProgressiveReveal(t *testing.T) {
+	h := New(Config{Admin: newMemStore()})
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	body := rec.Body.String()
+	if strings.Count(body, `class="sources"`) != 1 {
+		t.Fatal("expected one sources wrapper on the homepage")
+	}
+	if strings.Count(body, `name="url"`) != fetch.MaxSources {
+		t.Fatalf("expected %d url fields", fetch.MaxSources)
+	}
+	if !strings.Contains(body, `placeholder="https://…"`) {
+		t.Fatal("url fields need placeholders for :placeholder-shown")
+	}
+	css := sourcesRevealCSS()
+	if !strings.Contains(body, css) {
+		t.Fatal("homepage should include source reveal CSS")
+	}
+	if !strings.Contains(css, ".sources .row{display:none}") {
+		t.Fatal("empty source rows should be hidden by default")
+	}
+	if !strings.Contains(css, fmt.Sprintf(".sources .row:nth-child(-n+%d){display:grid}", sourceEmptyVisible+1)) {
+		t.Fatal("first three empty rows plus faded teaser should be visible")
+	}
+	if !strings.Contains(css, fmt.Sprintf(".sources .row:nth-child(%d){%s}", sourceEmptyVisible+1, sourceFadeMask)) {
+		t.Fatal("fourth row should fade from opaque to transparent")
+	}
+	if !strings.Contains(css, ":has(input:not(:placeholder-shown))") {
+		t.Fatal("reveal should follow the last source row with text")
+	}
+	filledLast := 2
+	showThrough := filledLast + sourceEmptyVisible + 1
+	if !strings.Contains(css, fmt.Sprintf(".sources .row:nth-child(%d):has(input:not(:placeholder-shown))~.row:nth-child(-n+%d){display:grid}", filledLast, showThrough)) {
+		t.Fatalf("filling row %d should reveal through row %d", filledLast, showThrough)
+	}
+}
+
 func TestFooterCommitAndSourceLinks(t *testing.T) {
 	sha := "abcdef1234567890deadbeef"
 	h := New(Config{Admin: newMemStore(), Commit: sha})

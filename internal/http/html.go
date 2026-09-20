@@ -460,6 +460,44 @@ func manageURL(base, id string, secret []byte) string {
 	return base + "/m/" + id + "/" + hex.EncodeToString(secret)
 }
 
+const sourceEmptyVisible = 3
+const sourceFadeMask = `-webkit-mask-image:linear-gradient(to bottom,#000,transparent);mask-image:linear-gradient(to bottom,#000,transparent)`
+const sourceNoMask = `-webkit-mask-image:none;mask-image:none`
+
+func sourcesRevealCSS() string {
+	n := fetch.MaxSources
+	keep := sourceEmptyVisible
+	var b strings.Builder
+	b.WriteString(".sources .row{display:none}")
+	b.WriteString(fmt.Sprintf(".sources .row:nth-child(-n+%d){display:grid}", keep+1))
+	b.WriteString(fmt.Sprintf(".sources .row:nth-child(%d){%s}", keep+1, sourceFadeMask))
+	for i := 1; i <= n; i++ {
+		filled := fmt.Sprintf(".sources .row:nth-child(%d):has(input:not(:placeholder-shown))", i)
+		showThrough := i + keep + 1
+		if showThrough > n {
+			showThrough = n
+		}
+		unfadeThrough := i + keep
+		if unfadeThrough > n {
+			unfadeThrough = n
+		}
+		fadeIndex := i + keep + 1
+		if i < n {
+			b.WriteString(filled)
+			b.WriteString(fmt.Sprintf("~.row:nth-child(-n+%d){display:grid}", showThrough))
+			b.WriteString(filled)
+			b.WriteString(fmt.Sprintf("~.row:nth-child(-n+%d){%s}", unfadeThrough, sourceNoMask))
+			if fadeIndex <= n {
+				b.WriteString(filled)
+				b.WriteString(fmt.Sprintf("~.row:nth-child(%d){%s}", fadeIndex, sourceFadeMask))
+			}
+		}
+		b.WriteString(filled)
+		b.WriteString("{" + sourceNoMask + "}")
+	}
+	return b.String()
+}
+
 const layoutCSS = `*,*::before,*::after{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
 html,body{margin:0;max-width:100%}
@@ -491,7 +529,7 @@ func htmlShell(inner string) string {
 		`<link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">` +
 		`<link href="https://fonts.googleapis.com/css?family=Roboto:300,400,500" rel="stylesheet">` +
 		`<link href="` + mdcCSSURL + `" rel="stylesheet">` +
-		`<style>` + layoutCSS + `</style>` +
+		`<style>` + layoutCSS + sourcesRevealCSS() + `</style>` +
 		`{{if .SiteKey}}<script src="` + turnstileScript + `" async defer></script>{{end}}` +
 		`</head>` +
 		`<body class="mdc-typography"><main>` + inner + `</main>` +
@@ -510,6 +548,15 @@ var (
 const mdcRaised = `class="mdc-button mdc-button--raised" type="submit"`
 const mdcOutlined = `class="mdc-button mdc-button--outlined" type="submit"`
 
+const sourceRowsHTML = `<div class="sources">
+{{range .Slots}}
+<div class="row">
+<input type="url" name="url" placeholder="https://…" value="{{.URL}}">
+<input type="text" name="label" placeholder="label" value="{{.Label}}">
+</div>
+{{end}}
+</div>`
+
 const formBody = `
 <h1 class="mdc-typography mdc-typography--headline1">Catical</h1>
 <p>A tool for merging calendar feeds. Combine multiple iCal feeds into a single sharable URL.</p>
@@ -519,12 +566,7 @@ const formBody = `
 <label>Name <input type="text" name="name" value="{{.Name}}" required></label>
 <label><input type="checkbox" name="prefix_summaries" {{if .Prefix}}checked{{end}}> Prefix event summaries with source labels</label>
 <p>Sources (https URLs)</p>
-{{range .Slots}}
-<div class="row">
-<input type="url" name="url" placeholder="https://…" value="{{.URL}}">
-<input type="text" name="label" placeholder="label" value="{{.Label}}">
-</div>
-{{end}}
+` + sourceRowsHTML + `
 {{if .SiteKey}}
 <div class="cf-turnstile" data-sitekey="{{.SiteKey}}" data-action="{{.TurnstileAction}}"></div>
 {{end}}
@@ -548,12 +590,7 @@ const manageBody = `
 <label>Name <input type="text" name="name" value="{{.Name}}" required></label>
 <label><input type="checkbox" name="prefix_summaries" {{if .Prefix}}checked{{end}}> Prefix event summaries with source labels</label>
 <p>Sources (https URLs)</p>
-{{range .Slots}}
-<div class="row">
-<input type="url" name="url" value="{{.URL}}">
-<input type="text" name="label" placeholder="label" value="{{.Label}}">
-</div>
-{{end}}
+` + sourceRowsHTML + `
 {{if .SiteKey}}
 <div class="cf-turnstile" data-sitekey="{{.SiteKey}}" data-action="{{.TurnstileAction}}"></div>
 {{end}}
