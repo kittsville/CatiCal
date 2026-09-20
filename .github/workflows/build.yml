@@ -46,6 +46,17 @@ jobs:
       run: docker tag catical:latest ghcr.io/kittsville/catical:latest
     - name: Docker Push
       run: docker push ghcr.io/kittsville/catical:latest
+    - name: Point Coolify at GHCR
+      env:
+        COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+        COOLIFY_DEPLOY_WEBHOOK: ${{ secrets.COOLIFY_DEPLOY_WEBHOOK }}
+      run: |
+        origin="$(python3 -c 'import os, urllib.parse as u; p = u.urlparse(os.environ["COOLIFY_DEPLOY_WEBHOOK"]); print(f"{p.scheme}://{p.netloc}")')"
+        curl -fsS -X PATCH \
+          -H "Authorization: Bearer ${COOLIFY_TOKEN}" \
+          -H "Content-Type: application/json" \
+          -d '{"docker_registry_image_name":"ghcr.io/kittsville/catical","docker_registry_image_tag":"latest"}' \
+          -- "${origin}/api/v1/applications/jz0b9ibtulb04k1glbvnut2e"
     - name: Trigger Coolify Deployment
       env:
         COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
