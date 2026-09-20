@@ -99,6 +99,29 @@ func TestFooterDefaultsToLatestWhenCommitUnset(t *testing.T) {
 	}
 }
 
+func TestFAQPageGET(t *testing.T) {
+	h := New(Config{})
+	req := httptest.NewRequest(http.MethodGet, "/faq", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if rec.Header().Get("Referrer-Policy") != "no-referrer" {
+		t.Fatalf("Referrer-Policy = %q", rec.Header().Get("Referrer-Policy"))
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "FAQ") {
+		t.Fatal("expected FAQ title")
+	}
+	if !strings.Contains(body, "<dt>") || !strings.Contains(body, "<dd>") {
+		t.Fatal("expected Q/A markup")
+	}
+	if !strings.Contains(strings.ToLower(body), "lorem ipsum") {
+		t.Fatal("expected placeholder answer")
+	}
+}
+
 func TestPOSTCreateSuccessContainsBothLinks(t *testing.T) {
 	st := newMemStore()
 	h := htmlHandler(st)

@@ -70,7 +70,7 @@ func (c Config) baseURL() string {
 	return u
 }
 
-// New returns a mux serving /healthz, HTML create/manage, and GET /c/{id}/{secret}.
+// New returns a mux serving /healthz, HTML create/manage/FAQ, and GET /c/{id}/{secret}.
 func New(cfg Config) http.Handler {
 	if cfg.Now == nil {
 		cfg.Now = time.Now
@@ -85,6 +85,9 @@ func New(cfg Config) http.Handler {
 	mux.HandleFunc("GET /robots.txt", serveRobots)
 	mux.HandleFunc("GET /c/{id}/{secret}", func(w http.ResponseWriter, r *http.Request) {
 		serveICS(w, r, cfg)
+	})
+	mux.HandleFunc("GET /faq", func(w http.ResponseWriter, r *http.Request) {
+		serveFAQ(w, cfg)
 	})
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		serveCreateForm(w, cfg, "", 0)

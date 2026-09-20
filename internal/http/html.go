@@ -56,6 +56,11 @@ type pageData struct {
 	Commit          string
 	CommitURL       string
 	SourceURL       string
+	FAQBody         template.HTML
+}
+
+//go:embed faq.html
+var faqHTML string
 
 const sourceRepoURL = "https://github.com/kittsville/CatiCal"
 
@@ -97,6 +102,14 @@ func slotsFromFeed(f store.Feed) []slot {
 		out[i] = slot{URL: s.URL, Label: s.Label}
 	}
 	return out
+}
+
+func serveFAQ(w http.ResponseWriter, cfg Config) {
+	writeHTMLHeaders(w, "")
+	_ = faqTmpl.Execute(w, withFooter(cfg, pageData{
+		Title:   "FAQ",
+		FAQBody: template.HTML(faqHTML),
+	}))
 }
 
 func serveCreateForm(w http.ResponseWriter, cfg Config, errMsg string, status int) {
@@ -434,7 +447,7 @@ func htmlShell(inner string) string {
 		`{{if .SiteKey}}<script src="` + turnstileScript + `" async defer></script>{{end}}` +
 		`</head>` +
 		`<body class="mdc-typography"><main>` + inner + `</main>` +
-		`<footer>v<a href="{{.CommitURL}}">{{.Commit}}</a> | <a href="{{.SourceURL}}">Source Code</a></footer>` +
+		`<footer>v<a href="{{.CommitURL}}">{{.Commit}}</a> | <a href="{{.SourceURL}}">Source Code</a> | <a href="/faq">FAQ</a></footer>` +
 		`</body></html>`
 }
 
@@ -443,6 +456,7 @@ var (
 	createdTmpl = template.Must(template.New("created").Parse(htmlShell(createdBody)))
 	manageTmpl  = template.Must(template.New("manage").Parse(htmlShell(manageBody)))
 	rotateTmpl  = template.Must(template.New("rotate").Parse(htmlShell(rotateBody)))
+	faqTmpl     = template.Must(template.New("faq").Parse(htmlShell(`{{.FAQBody}}`)))
 )
 
 const mdcRaised = `class="mdc-button mdc-button--raised" type="submit"`
@@ -450,7 +464,8 @@ const mdcOutlined = `class="mdc-button mdc-button--outlined" type="submit"`
 
 const formBody = `
 <h1 class="mdc-typography mdc-typography--headline1">Catical</h1>
-<p>Merge up to 8 public https calendar URLs into one feed. No accounts.</p>
+<p>A tool for merging calendar feeds. Combine multiple iCal feeds into a single sharable URL.</p>
+<p>Confused? Learn more in the <a href="/faq">FAQ</a>.</p>
 {{if .Error}}<p class="err">{{.Error}}</p>{{end}}
 <form method="post" action="/">
 <label>Name <input type="text" name="name" value="{{.Name}}" required></label>
@@ -508,4 +523,4 @@ const rotateBody = `
 <p class="warn">{{.Warning}}</p>
 <p><code>{{.NewURL}}</code></p>
 {{if .FormAction}}<p><a href="{{.FormAction}}">Back to manage</a></p>{{end}}
-<p><a href="/">Home</a></p>`
+<p>&#60; <a href="/">Home</a></p>`
