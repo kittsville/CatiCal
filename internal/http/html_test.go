@@ -140,8 +140,11 @@ func TestFAQPageGET(t *testing.T) {
 	if !strings.Contains(body, "<dt>") || !strings.Contains(body, "<dd>") {
 		t.Fatal("expected Q/A markup")
 	}
-	if !strings.Contains(strings.ToLower(body), "lorem ipsum") {
-		t.Fatal("expected placeholder answer")
+	if !strings.Contains(body, "What is this website for?") {
+		t.Fatal("expected FAQ question")
+	}
+	if !strings.Contains(body, "merges multiple calendar feeds") {
+		t.Fatal("expected FAQ answer")
 	}
 }
 
