@@ -66,6 +66,39 @@ func TestCreateFormGETHeadersAndNoindex(t *testing.T) {
 	}
 }
 
+func TestFooterCommitAndSourceLinks(t *testing.T) {
+	sha := "abcdef1234567890deadbeef"
+	h := New(Config{Admin: newMemStore(), Commit: sha})
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	body := rec.Body.String()
+	if !strings.Contains(body, ">abcdef</a>") {
+		t.Fatalf("expected 6-char commit in footer: %s", body)
+	}
+	wantCommit := `href="https://github.com/kittsville/CatiCal/commit/` + sha + `"`
+	if !strings.Contains(body, wantCommit) {
+		t.Fatalf("missing commit URL %s in %s", wantCommit, body)
+	}
+	if !strings.Contains(body, `href="https://github.com/kittsville/CatiCal"`) {
+		t.Fatal("missing source code URL")
+	}
+	if !strings.Contains(body, "Source Code") {
+		t.Fatal("missing Source Code label")
+	}
+}
+
+func TestFooterDefaultsToLatestWhenCommitUnset(t *testing.T) {
+	h := New(Config{Admin: newMemStore()})
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	body := rec.Body.String()
+	if !strings.Contains(body, `href="https://github.com/kittsville/CatiCal/commit/latest"`) {
+		t.Fatalf("expected latest commit fallback: %s", body)
+	}
+}
+
 func TestPOSTCreateSuccessContainsBothLinks(t *testing.T) {
 	st := newMemStore()
 	h := htmlHandler(st)

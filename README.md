@@ -34,6 +34,7 @@ Env (production / Coolify):
 | `TURNSTILE_SECRET` | Server-side siteverify; unset = Turnstile off (local/dev) |
 | `TURNSTILE_HOSTNAMES` | Comma-separated hosts siteverify must return (optional; defaults to `BASE_URL` host, never loopback) |
 | `LOG_LEVEL` | `debug` / `info` / `warn` / `error` |
+| `SOURCE_COMMIT` | Git SHA for the footer; Coolify sets this on deploy |
 
 Migrations apply on process start (version table; safe to run twice). Listen `:8080`. Healthcheck: `GET /healthz`.
 

@@ -2,6 +2,7 @@ package httpserver
 
 import (
 	"context"
+	_ "embed"
 	"encoding/hex"
 	"fmt"
 	"html/template"
@@ -52,6 +53,30 @@ type pageData struct {
 	RotateKind      string
 	SiteKey         string
 	TurnstileAction string
+	Commit          string
+	CommitURL       string
+	SourceURL       string
+
+const sourceRepoURL = "https://github.com/kittsville/CatiCal"
+
+func (c Config) commitSHA() string {
+	s := strings.TrimSpace(c.Commit)
+	if s == "" {
+		return "latest"
+	}
+	return s
+}
+
+func withFooter(cfg Config, d pageData) pageData {
+	sha := cfg.commitSHA()
+	short := sha
+	if len(short) > 6 {
+		short = short[:6]
+	}
+	d.Commit = short
+	d.CommitURL = sourceRepoURL + "/commit/" + sha
+	d.SourceURL = sourceRepoURL
+	return d
 }
 
 type slot struct {
@@ -82,14 +107,14 @@ func serveCreateForm(w http.ResponseWriter, cfg Config, errMsg string, status in
 		}
 		w.WriteHeader(status)
 	}
-	_ = formTmpl.Execute(w, pageData{
+	_ = formTmpl.Execute(w, withFooter(cfg, pageData{
 		Title:           "Create calendar mix",
 		Error:           errMsg,
 		Slots:           emptySlots(),
 		Prefix:          false,
 		SiteKey:         cfg.TurnstileSiteKey,
 		TurnstileAction: turnstileCreate,
-	})
+	}))
 }
 
 func serveCreate(w http.ResponseWriter, r *http.Request, cfg Config) {
@@ -151,7 +176,7 @@ func serveCreate(w http.ResponseWriter, r *http.Request, cfg Config) {
 		Warning:   "Copy both links now. The feed URL will not be shown again. If you lose the manage link it cannot be recovered.",
 	}
 	writeHTMLHeaders(w, cfg.TurnstileSiteKey)
-	_ = createdTmpl.Execute(w, data)
+	_ = createdTmpl.Execute(w, withFooter(cfg, data))
 }
 
 func serveManageGET(w http.ResponseWriter, r *http.Request, cfg Config) {
@@ -248,13 +273,13 @@ func serveManagePOST(w http.ResponseWriter, r *http.Request, cfg Config) {
 			return
 		}
 		writeHTMLHeaders(w, cfg.TurnstileSiteKey)
-		_ = rotateTmpl.Execute(w, pageData{
+		_ = rotateTmpl.Execute(w, withFooter(cfg, pageData{
 			Title:      "Feed URL rotated",
 			NewURL:     feedURL(cfg.baseURL(), feed.ID.String(), sec),
 			RotateKind: "feed",
 			FormAction: r.URL.Path,
 			Warning:    "Copy the new feed URL now. It will not be shown again. Your manage URL is unchanged.",
-		})
+		}))
 	case "rotate_manage":
 		salt, sec, hash, err := tokens.Generate()
 		if err != nil {
@@ -266,12 +291,12 @@ func serveManagePOST(w http.ResponseWriter, r *http.Request, cfg Config) {
 			return
 		}
 		writeHTMLHeaders(w, cfg.TurnstileSiteKey)
-		_ = rotateTmpl.Execute(w, pageData{
+		_ = rotateTmpl.Execute(w, withFooter(cfg, pageData{
 			Title:      "Manage URL rotated",
 			NewURL:     manageURL(cfg.baseURL(), feed.ID.String(), sec),
 			RotateKind: "manage",
 			Warning:    "Copy the new manage URL now. The previous manage link no longer works.",
-		})
+		}))
 	default:
 		http.Error(w, "not found", http.StatusNotFound)
 	}
@@ -282,7 +307,7 @@ func renderManage(w http.ResponseWriter, cfg Config, status int, data pageData) 
 	data.TurnstileAction = turnstileManage
 	writeHTMLHeaders(w, cfg.TurnstileSiteKey)
 	w.WriteHeader(status)
-	_ = manageTmpl.Execute(w, data)
+	_ = manageTmpl.Execute(w, withFooter(cfg, data))
 }
 
 func loadManaged(w http.ResponseWriter, r *http.Request, cfg Config) (store.Feed, []byte, bool) {
@@ -395,7 +420,10 @@ input[type=text],input[type=url]{width:100%;box-sizing:border-box;padding:.4rem}
 .err{color:#a40000}
 .warn{background:#fff3cd;padding:.75rem;border:1px solid #c9a227}
 code,pre{word-break:break-all;white-space:pre-wrap}
-.mdc-button{margin:.4rem .4rem 0 0}`
+.mdc-button{margin:.4rem .4rem 0 0}
+dt{font-weight:500;margin-top:1rem}
+dd{margin:.35rem 0 0 0}
+footer{width:100%;max-width:42rem;margin:2rem auto 1rem;padding:0 1rem;font-size:.9rem}`
 
 func htmlShell(inner string) string {
 	return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="robots" content="noindex"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{{.Title}}</title>` +
@@ -405,7 +433,9 @@ func htmlShell(inner string) string {
 		`<style>` + layoutCSS + `</style>` +
 		`{{if .SiteKey}}<script src="` + turnstileScript + `" async defer></script>{{end}}` +
 		`</head>` +
-		`<body class="mdc-typography"><main>` + inner + `</main></body></html>`
+		`<body class="mdc-typography"><main>` + inner + `</main>` +
+		`<footer>v<a href="{{.CommitURL}}">{{.Commit}}</a> | <a href="{{.SourceURL}}">Source Code</a></footer>` +
+		`</body></html>`
 }
 
 var (

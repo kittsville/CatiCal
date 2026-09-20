@@ -59,6 +59,7 @@ func main() {
 		TurnstileSecret:    os.Getenv("TURNSTILE_SECRET"),
 		TurnstileSiteKey:   os.Getenv("TURNSTILE_SITE_KEY"),
 		TurnstileHostnames: os.Getenv("TURNSTILE_HOSTNAMES"),
+		Commit:             os.Getenv("SOURCE_COMMIT"),
 	})
 
 	srv := &http.Server{Addr: ":8080", Handler: h}

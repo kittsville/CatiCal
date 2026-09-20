@@ -57,6 +57,9 @@ type Config struct {
 	TurnstileSiteKey   string
 	TurnstileHostnames string
 	TurnstileVerifier  TurnstileVerifier
+
+	// Commit is Coolify SOURCE_COMMIT. Empty becomes "latest".
+	Commit string
 }
 
 func (c Config) baseURL() string {
