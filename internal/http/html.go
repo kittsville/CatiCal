@@ -120,7 +120,7 @@ func serveCreateForm(w http.ResponseWriter, cfg Config, errMsg string, status in
 		w.WriteHeader(status)
 	}
 	_ = formTmpl.Execute(w, withFooter(cfg, pageData{
-		Title:           "Create calendar mix",
+		Title:           "CatiCal - Combine Calendars",
 		Error:           errMsg,
 		Slots:           emptySlots(),
 		Prefix:          false,
@@ -182,7 +182,7 @@ func serveCreate(w http.ResponseWriter, r *http.Request, cfg Config) {
 
 	base := cfg.baseURL()
 	data := pageData{
-		Title:     "Calendar mix created",
+		Title:     "Created combined calendar",
 		FeedURL:   feedURL(base, feed.ID.String(), feedSecret),
 		ManageURL: manageURL(base, feed.ID.String(), manageSecret),
 		Warning:   "Copy both links now. The feed URL will not be shown again. If you lose the manage link it cannot be recovered.",
@@ -197,7 +197,7 @@ func serveManageGET(w http.ResponseWriter, r *http.Request, cfg Config) {
 		return
 	}
 	renderManage(w, cfg, http.StatusOK, pageData{
-		Title:      "Manage calendar mix",
+		Title:      "Managed combined calendar",
 		Name:       feed.Name,
 		Prefix:     feed.PrefixSummaries,
 		Slots:      slotsFromFeed(feed),
@@ -213,7 +213,7 @@ func serveManagePOST(w http.ResponseWriter, r *http.Request, cfg Config) {
 	}
 	if err := r.ParseForm(); err != nil {
 		renderManage(w, cfg, http.StatusBadRequest, pageData{
-			Title: "Manage calendar mix", Error: "invalid form",
+			Title: "Managed combined calendar", Error: "invalid form",
 			Name: feed.Name, Prefix: feed.PrefixSummaries, Slots: slotsFromFeed(feed),
 			FormAction: r.URL.Path,
 		})
@@ -221,7 +221,7 @@ func serveManagePOST(w http.ResponseWriter, r *http.Request, cfg Config) {
 	}
 	if !checkTurnstile(w, r, cfg, turnstileManage, func(msg string, code int) {
 		renderManage(w, cfg, code, pageData{
-			Title: "Manage calendar mix", Error: msg,
+			Title: "Managed combined calendar", Error: msg,
 			Name: feed.Name, Prefix: feed.PrefixSummaries, Slots: slotsFromFeed(feed),
 			FormAction: r.URL.Path,
 		})
@@ -233,7 +233,7 @@ func serveManagePOST(w http.ResponseWriter, r *http.Request, cfg Config) {
 		name := strings.TrimSpace(r.FormValue("name"))
 		if name == "" {
 			renderManage(w, cfg, http.StatusBadRequest, pageData{
-				Title: "Manage calendar mix", Error: "name is required",
+				Title: "Managed combined calendar", Error: "name is required",
 				Name: feed.Name, Prefix: feed.PrefixSummaries, Slots: slotsFromFeed(feed),
 				FormAction: r.URL.Path,
 			})
@@ -242,7 +242,7 @@ func serveManagePOST(w http.ResponseWriter, r *http.Request, cfg Config) {
 		srcs, err := parseFormSources(r.Context(), r)
 		if err != nil {
 			renderManage(w, cfg, http.StatusBadRequest, pageData{
-				Title: "Manage calendar mix", Error: err.Error(),
+				Title: "Managed combined calendar", Error: err.Error(),
 				Name: name, Prefix: r.FormValue("prefix_summaries") != "", Slots: slotsFromFeed(feed),
 				FormAction: r.URL.Path,
 			})
@@ -263,7 +263,7 @@ func serveManagePOST(w http.ResponseWriter, r *http.Request, cfg Config) {
 			return
 		}
 		renderManage(w, cfg, http.StatusOK, pageData{
-			Title: "Manage calendar mix", Notice: "Saved.",
+			Title: "Managed combined calendar", Notice: "Saved.",
 			Name: updated.Name, Prefix: updated.PrefixSummaries, Slots: slotsFromFeed(updated),
 			FormAction: r.URL.Path,
 		})
@@ -479,13 +479,13 @@ const formBody = `
 </form>`
 
 const createdBody = `
-<h1 class="mdc-typography mdc-typography--headline1">Mix created</h1>
+<h1 class="mdc-typography mdc-typography--headline1">Calendars combined</h1>
 <p class="warn">{{.Warning}}</p>
 <p>Feed (subscribe in a calendar app):</p>
 <p><code>{{.FeedURL}}</code></p>
 <p>Manage (bookmark this; it is unrecoverable):</p>
 <p><code>{{.ManageURL}}</code></p>
-<p><a href="{{.ManageURL}}">Open manage page</a></p>`
+<p><a href="{{.ManageURL}}">Open management page</a></p>`
 
 const manageBody = `
 <h1 class="mdc-typography mdc-typography--headline1">Manage mix</h1>
