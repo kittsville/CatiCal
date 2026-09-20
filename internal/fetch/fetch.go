@@ -25,7 +25,10 @@ const (
 	DefaultMaxBody = 2 << 20
 	// DefaultTimeout is the per-request client timeout.
 	DefaultTimeout = 5 * time.Second
-	maxRedirects   = 10
+	// DefaultMaxConcurrent is the process-wide cap on in-flight origin GETs.
+	DefaultMaxConcurrent = 32
+	maxRedirects         = 10
+	httpsPort            = "443"
 )
 
 // Result is the outcome of one URL in a GetAll call, aligned by index.
@@ -37,23 +40,30 @@ type Result struct {
 
 // Fetcher performs bounded, SSRF-safe ICS GETs.
 type Fetcher struct {
-	Timeout    time.Duration
-	MaxBody    int64
-	MaxSources int
-	Logger     *slog.Logger
+	Timeout       time.Duration
+	MaxBody       int64
+	MaxSources    int
+	MaxConcurrent int
+	Logger        *slog.Logger
 
 	mu          sync.RWMutex
-	permitHosts map[string]struct{} // host or host:port, for httptest
+	permitHosts map[string]struct{} // exact host:port, for httptest
+
+	lookupIPAddr func(ctx context.Context, host string) ([]net.IPAddr, error)
+
+	semOnce sync.Once
+	sem     chan struct{}
 }
 
 // New returns a Fetcher with production defaults (no loopback permit).
 func New() *Fetcher {
 	return &Fetcher{
-		Timeout:     DefaultTimeout,
-		MaxBody:     DefaultMaxBody,
-		MaxSources:  MaxSources,
-		Logger:      slog.Default(),
-		permitHosts: make(map[string]struct{}),
+		Timeout:       DefaultTimeout,
+		MaxBody:       DefaultMaxBody,
+		MaxSources:    MaxSources,
+		MaxConcurrent: DefaultMaxConcurrent,
+		Logger:        slog.Default(),
+		permitHosts:   make(map[string]struct{}),
 	}
 }
 
@@ -108,8 +118,8 @@ func (f *Fetcher) GetAll(ctx context.Context, urls []string) []Result {
 	return out
 }
 
-// ValidateURL reports whether raw is an allowed origin URL (http/https to a
-// public host). It wraps the same SSRF rules as GetAll.
+// ValidateURL reports whether raw is an allowed origin URL (https to a
+// public host on port 443). It wraps the same SSRF rules as GetAll.
 func ValidateURL(ctx context.Context, raw string) error {
 	return defaultFetcher.ValidateURL(ctx, raw)
 }
@@ -124,6 +134,33 @@ func (f *Fetcher) ValidateURL(ctx context.Context, raw string) error {
 	return f.validateURL(ctx, u)
 }
 
+func (f *Fetcher) lookup(ctx context.Context, host string) ([]net.IPAddr, error) {
+	if f.lookupIPAddr != nil {
+		return f.lookupIPAddr(ctx, host)
+	}
+	return net.DefaultResolver.LookupIPAddr(ctx, host)
+}
+
+func (f *Fetcher) acquire(ctx context.Context) error {
+	f.semOnce.Do(func() {
+		n := f.MaxConcurrent
+		if n <= 0 {
+			n = DefaultMaxConcurrent
+		}
+		f.sem = make(chan struct{}, n)
+	})
+	select {
+	case f.sem <- struct{}{}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (f *Fetcher) release() {
+	<-f.sem
+}
+
 func (f *Fetcher) getOne(ctx context.Context, raw string) Result {
 	u, err := url.Parse(raw)
 	if err != nil {
@@ -132,13 +169,26 @@ func (f *Fetcher) getOne(ctx context.Context, raw string) Result {
 	if err := f.validateURL(ctx, u); err != nil {
 		return Result{Err: err}
 	}
+	if err := f.acquire(ctx); err != nil {
+		return Result{Err: err}
+	}
+	defer f.release()
 
 	timeout := f.Timeout
 	if timeout <= 0 {
 		timeout = DefaultTimeout
 	}
+	dialer := &net.Dialer{Timeout: timeout}
 	client := &http.Client{
 		Timeout: timeout,
+		Transport: &http.Transport{
+			Proxy:                 nil,
+			DialContext:           f.dialContext(dialer),
+			DisableKeepAlives:     true,
+			TLSHandshakeTimeout:   timeout,
+			ResponseHeaderTimeout: timeout,
+			ForceAttemptHTTP2:     false,
+		},
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) >= maxRedirects {
 				return errors.New("too many redirects")
@@ -184,6 +234,67 @@ func (f *Fetcher) getOne(ctx context.Context, raw string) Result {
 	return Result{Body: body, Status: resp.StatusCode}
 }
 
+func (f *Fetcher) dialContext(d *net.Dialer) func(ctx context.Context, network, addr string) (net.Conn, error) {
+	return func(ctx context.Context, network, addr string) (net.Conn, error) {
+		if f.permitted(addr) {
+			return d.DialContext(ctx, network, addr)
+		}
+		host, port, err := net.SplitHostPort(addr)
+		if err != nil {
+			return nil, err
+		}
+		if port != httpsPort {
+			return nil, fmt.Errorf("port %s not allowed", port)
+		}
+		ips, err := f.resolvePublic(ctx, host)
+		if err != nil {
+			return nil, err
+		}
+		var last error
+		for _, ipa := range ips {
+			conn, err := d.DialContext(ctx, network, net.JoinHostPort(ipa.IP.String(), port))
+			if err != nil {
+				last = err
+				continue
+			}
+			tcp, ok := conn.RemoteAddr().(*net.TCPAddr)
+			if !ok || !publicIP(tcp.IP) {
+				_ = conn.Close()
+				last = fmt.Errorf("connected address not allowed")
+				continue
+			}
+			return conn, nil
+		}
+		if last == nil {
+			last = errors.New("no allowed addresses")
+		}
+		return nil, last
+	}
+}
+
+func (f *Fetcher) resolvePublic(ctx context.Context, host string) ([]net.IPAddr, error) {
+	if ip := net.ParseIP(host); ip != nil {
+		if !publicIP(ip) {
+			return nil, fmt.Errorf("address %s not allowed", host)
+		}
+		return []net.IPAddr{{IP: ip}}, nil
+	}
+	ips, err := f.lookup(ctx, host)
+	if err != nil {
+		return nil, fmt.Errorf("resolve host: %w", err)
+	}
+	var out []net.IPAddr
+	for _, addr := range ips {
+		if publicIP(addr.IP) {
+			out = append(out, addr)
+		}
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("host %q resolved to no public addresses", host)
+	}
+	return out, nil
+}
+
 func (f *Fetcher) logHost(u *url.URL, status int, result string) {
 	log := f.Logger
 	if log == nil {
@@ -217,8 +328,15 @@ func (f *Fetcher) validateURL(ctx context.Context, u *url.URL) error {
 	} else if u.Host != "" {
 		hostport = u.Host
 	}
-	if f.permitted(hostport) || f.permitted(host) {
+	if f.permitted(hostport) {
 		return nil
+	}
+
+	if scheme != "https" {
+		return fmt.Errorf("scheme %q not allowed", u.Scheme)
+	}
+	if port != "" && port != httpsPort {
+		return fmt.Errorf("port %s not allowed", port)
 	}
 
 	ip := net.ParseIP(host)
@@ -229,7 +347,7 @@ func (f *Fetcher) validateURL(ctx context.Context, u *url.URL) error {
 		return nil
 	}
 
-	ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	ips, err := f.lookup(ctx, host)
 	if err != nil {
 		return fmt.Errorf("resolve host: %w", err)
 	}

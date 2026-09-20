@@ -9,6 +9,8 @@ import (
 
 const defaultPOSTLimit = 10
 const defaultPOSTWindow = time.Minute
+const defaultICSGETLimit = 30
+const defaultICSFeedLimit = 12
 
 type ipLimiter struct {
 	mu      sync.Mutex

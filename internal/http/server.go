@@ -40,13 +40,15 @@ type Refresher interface {
 
 // Config wires ICS GET and HTML admin to store + refresh.
 type Config struct {
-	Store     FeedLookup
-	Admin     Admin
-	Refresh   Refresher
-	BaseURL   string
-	Now       func() time.Time
-	Logger    *slog.Logger
-	POSTLimit int // per IP per minute; 0 uses defaultPOSTLimit
+	Store        FeedLookup
+	Admin        Admin
+	Refresh      Refresher
+	BaseURL      string
+	Now          func() time.Time
+	Logger       *slog.Logger
+	POSTLimit    int // per IP per minute; 0 uses defaultPOSTLimit
+	GETLimit     int // ICS GET per IP per minute; 0 uses defaultICSGETLimit
+	GETFeedLimit int // ICS GET per feed per minute; 0 uses defaultICSFeedLimit
 
 	// TurnstileSecret, when set, requires a Cloudflare Turnstile token on
 	// create and manage POSTs. Unset disables Turnstile (local/dev). ICS GET
@@ -58,7 +60,7 @@ type Config struct {
 	TurnstileHostnames string
 	TurnstileVerifier  TurnstileVerifier
 
-	// Commit is Coolify SOURCE_COMMIT. Empty becomes "latest".
+	// Commit is a git SHA for the footer. Empty becomes "latest".
 	Commit string
 
 	// Fetch downloads origin ICS on create/save. Nil uses fetch.GetAll.
@@ -88,11 +90,13 @@ func New(cfg Config) http.Handler {
 	}
 	createLim := newIPLimiter(cfg.POSTLimit, 0, cfg.Now)
 	manageLim := newIPLimiter(cfg.POSTLimit, 0, cfg.Now)
+	icsIPLim := newIPLimiter(orDefault(cfg.GETLimit, defaultICSGETLimit), 0, cfg.Now)
+	icsFeedLim := newIPLimiter(orDefault(cfg.GETFeedLimit, defaultICSFeedLimit), 0, cfg.Now)
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", HealthHandler)
 	mux.HandleFunc("GET /robots.txt", serveRobots)
 	mux.HandleFunc("GET /c/{id}/{secret}", func(w http.ResponseWriter, r *http.Request) {
-		serveICS(w, r, cfg)
+		serveICS(w, r, cfg, icsIPLim, icsFeedLim)
 	})
 	mux.HandleFunc("GET /faq", func(w http.ResponseWriter, r *http.Request) {
 		serveFAQ(w, cfg)
@@ -120,9 +124,20 @@ func New(cfg Config) http.Handler {
 	return redactLog(cfg.Logger, mux)
 }
 
-func serveICS(w http.ResponseWriter, r *http.Request, cfg Config) {
+func orDefault(n, fallback int) int {
+	if n <= 0 {
+		return fallback
+	}
+	return n
+}
+
+func serveICS(w http.ResponseWriter, r *http.Request, cfg Config, icsIPLim, icsFeedLim *ipLimiter) {
 	if cfg.Store == nil || cfg.Refresh == nil {
 		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	if !icsIPLim.allow(peerIP(r)) {
+		tooMany(w)
 		return
 	}
 	id, secret, err := parseIDAndSecret(r)
@@ -142,6 +157,10 @@ func serveICS(w http.ResponseWriter, r *http.Request, cfg Config) {
 	}
 	if !tokens.Verify(feed.FeedTokenSalt, feed.FeedTokenHash, secret) {
 		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	if !icsFeedLim.allow(id.String()) {
+		tooMany(w)
 		return
 	}
 

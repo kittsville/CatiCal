@@ -5,9 +5,15 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
+
+	"sci1.uk/catical/internal/store"
+	"sci1.uk/catical/internal/tokens"
 )
 
 func TestCreateRateLimitSamePeerReturns429(t *testing.T) {
@@ -74,6 +80,79 @@ func TestManagePOSTRateLimitSamePeerReturns429(t *testing.T) {
 	if rec.Code != http.StatusTooManyRequests {
 		t.Fatalf("N+1 manage POST status = %d, want 429", rec.Code)
 	}
+}
+
+func TestICSGETRateLimitSamePeerReturns429(t *testing.T) {
+	id := uuid.New()
+	salt, secret, hash, err := tokens.Generate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := &fakeFeedStore{feed: store.Feed{ID: id, FeedTokenSalt: salt, FeedTokenHash: hash}}
+	rf := &fakeRefresh{body: []byte("BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n")}
+	h := New(Config{
+		Store:    st,
+		Refresh:  rf,
+		GETLimit: 2,
+		Now:      func() time.Time { return time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC) },
+	})
+	path := feedPath(id, secret) + ".ics"
+	for i := 0; i < 2; i++ {
+		rec := getFrom(t, h, path, "203.0.113.40:9")
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET %d status = %d", i+1, rec.Code)
+		}
+	}
+	rec := getFrom(t, h, path, "203.0.113.40:9")
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("N+1 ICS GET status = %d, want 429", rec.Code)
+	}
+	if rf.calls != 2 {
+		t.Fatalf("refresh calls = %d, want 2 (429 must not refresh)", rf.calls)
+	}
+	other := getFrom(t, h, path, "203.0.113.41:9")
+	if other.Code == http.StatusTooManyRequests {
+		t.Fatal("different peer should not share the ICS GET bucket")
+	}
+}
+
+func TestICSGETRateLimitPerFeedReturns429(t *testing.T) {
+	id := uuid.New()
+	salt, secret, hash, err := tokens.Generate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := &fakeFeedStore{feed: store.Feed{ID: id, FeedTokenSalt: salt, FeedTokenHash: hash}}
+	rf := &fakeRefresh{body: []byte("BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n")}
+	h := New(Config{
+		Store:        st,
+		Refresh:      rf,
+		GETFeedLimit: 2,
+		Now:          func() time.Time { return time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC) },
+	})
+	path := feedPath(id, secret) + ".ics"
+	for i := 0; i < 2; i++ {
+		rec := getFrom(t, h, path, "203.0.113."+strconv.Itoa(50+i)+":9")
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET %d status = %d", i+1, rec.Code)
+		}
+	}
+	rec := getFrom(t, h, path, "203.0.113.99:9")
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("N+1 same feed status = %d, want 429", rec.Code)
+	}
+	if rf.calls != 2 {
+		t.Fatalf("refresh calls = %d, want 2", rf.calls)
+	}
+}
+
+func getFrom(t *testing.T, h http.Handler, path, remote string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	req.RemoteAddr = remote
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	return rec
 }
 
 func TestRobotsTxtDisallowsManage(t *testing.T) {

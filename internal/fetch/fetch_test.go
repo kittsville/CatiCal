@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -157,6 +158,9 @@ func TestGetAllRejectsSSRF(t *testing.T) {
 		"http://169.254.1.1/cal.ics",
 		"http://169.254.169.254/latest/meta-data/",
 		"http://metadata.google.internal/",
+		"http://1.1.1.1/cal.ics",
+		"https://1.1.1.1:6379/cal.ics",
+		"https://1.1.1.1:80/cal.ics",
 	}
 	for _, raw := range blocked {
 		t.Run(raw, func(t *testing.T) {
@@ -198,6 +202,63 @@ func TestGetAllRedirectToLoopback(t *testing.T) {
 	}
 	if bytes.Contains(results[0].Body, []byte("internal-secret")) {
 		t.Fatal("followed redirect into loopback body")
+	}
+}
+
+func TestGetAllRejectsHTTPRedirectDowngrade(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "http://1.1.1.1/cal.ics", http.StatusFound)
+	}))
+	defer s.Close()
+
+	results := testFetcher(t, s).GetAll(context.Background(), []string{s.URL})
+	if results[0].Err == nil {
+		t.Fatal("expected reject of http redirect after http(s) source")
+	}
+}
+
+func TestGetAllDialRejectsDNSRebinding(t *testing.T) {
+	var n atomic.Int32
+	f := New()
+	f.lookupIPAddr = func(ctx context.Context, host string) ([]net.IPAddr, error) {
+		if n.Add(1) == 1 {
+			return []net.IPAddr{{IP: net.ParseIP("1.1.1.1")}}, nil
+		}
+		return []net.IPAddr{{IP: net.ParseIP("169.254.169.254")}}, nil
+	}
+	results := f.GetAll(context.Background(), []string{"https://rebinder.invalid/cal.ics"})
+	if results[0].Err == nil {
+		t.Fatal("expected dial-time reject after rebinding to a non-public IP")
+	}
+}
+
+func TestGetAllCapsConcurrentFetches(t *testing.T) {
+	var inflight atomic.Int32
+	var maxSeen atomic.Int32
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := inflight.Add(1)
+		defer inflight.Add(-1)
+		for {
+			old := maxSeen.Load()
+			if n <= old || maxSeen.CompareAndSwap(old, n) {
+				break
+			}
+		}
+		time.Sleep(40 * time.Millisecond)
+		io.WriteString(w, "ok")
+	}))
+	defer s.Close()
+
+	f := testFetcher(t, s)
+	f.MaxConcurrent = 1
+	results := f.GetAll(context.Background(), []string{s.URL, s.URL, s.URL})
+	for i, res := range results {
+		if res.Err != nil {
+			t.Fatalf("url %d: %v", i, res.Err)
+		}
+	}
+	if maxSeen.Load() > 1 {
+		t.Fatalf("concurrent fetches = %d, want 1", maxSeen.Load())
 	}
 }
 
@@ -333,5 +394,11 @@ func TestValidateURLWrapsSSRFRules(t *testing.T) {
 	}
 	if err := ValidateURL(ctx, "http://127.0.0.1/cal.ics"); err == nil {
 		t.Fatal("expected reject loopback")
+	}
+	if err := ValidateURL(ctx, "http://1.1.1.1/cal.ics"); err == nil {
+		t.Fatal("expected reject http")
+	}
+	if err := ValidateURL(ctx, "https://1.1.1.1:6379/cal.ics"); err == nil {
+		t.Fatal("expected reject non-443 port")
 	}
 }
