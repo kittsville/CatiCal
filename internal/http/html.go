@@ -599,7 +599,7 @@ const formBody = `
 {{if .Error}}<p class="err">{{.Error}}</p>{{end}}
 <form method="post" action="/">
 <label>Name <input type="text" name="name" value="{{.Name}}" required></label>
-<label><input type="checkbox" name="prefix_summaries" {{if .Prefix}}checked{{end}}> Prefix event summaries with source labels</label>
+<label><input type="checkbox" name="prefix_summaries" {{if .Prefix}}checked{{end}}> Prefix event titles with source labels</label>
 <p>Sources (https URLs)</p>
 ` + sourceRowsHTML + `
 {{if .SiteKey}}
@@ -623,7 +623,7 @@ const manageBody = `
 {{if .Notice}}<pre>{{.Notice}}</pre>{{end}}
 <form method="post" action="{{.FormAction}}">
 <label>Name <input type="text" name="name" value="{{.Name}}" required></label>
-<label><input type="checkbox" name="prefix_summaries" {{if .Prefix}}checked{{end}}> Prefix event summaries with source labels</label>
+<label><input type="checkbox" name="prefix_summaries" {{if .Prefix}}checked{{end}}> Prefix event titles with source labels</label>
 <p>Sources (https URLs)</p>
 ` + sourceRowsHTML + `
 {{if .SiteKey}}
