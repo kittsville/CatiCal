@@ -627,7 +627,7 @@ const sourceRowsHTML = `<div class="sources">
 </div>`
 
 const formBody = `
-<h1 class="mdc-typography mdc-typography--headline1">Catical</h1>
+<h1 class="mdc-typography mdc-typography--headline1">CatiCal</h1>
 <p>A tool for merging calendar feeds. Combine multiple iCal feeds into a single sharable URL.</p>
 <p>Confused? Learn more in the <a href="/faq">FAQ</a>.</p>
 {{if .Error}}<p class="err">{{.Error}}</p>{{end}}
