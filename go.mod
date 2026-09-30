@@ -6,6 +6,7 @@ require (
 	github.com/arran4/golang-ical v0.3.6
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.11.0
+	github.com/teambition/rrule-go v1.8.2
 	golang.org/x/sync v0.23.0
 )
 

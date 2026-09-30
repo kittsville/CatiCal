@@ -49,11 +49,20 @@ func (s *Store) Close() {
 	s.pool.Close()
 }
 
+// MaxWindowMonths is the largest past or future month bound a mix accepts.
+const MaxWindowMonths = 120
+
 // Feed is a calendar mix and its hashed capability tokens.
 type Feed struct {
 	ID              uuid.UUID
 	Name            string
 	PrefixSummaries bool
+	// PastMonths, when set, drops events that end at or before this many
+	// calendar months before refresh time. Nil means no past bound.
+	PastMonths *int
+	// FutureMonths, when set, drops events that start at or after this many
+	// calendar months after refresh time. Nil means no future bound.
+	FutureMonths    *int
 	FeedTokenSalt   []byte
 	FeedTokenHash   []byte
 	ManageTokenSalt []byte
@@ -98,10 +107,13 @@ type CreateSource struct {
 	Position int
 }
 
-// UpdateFeedParams replaces name, prefix flag, and the full source list.
+// UpdateFeedParams replaces name, prefix flag, event window, and the full source list.
+// Nil month pointers clear that side of the window.
 type UpdateFeedParams struct {
 	Name            string
 	PrefixSummaries bool
+	PastMonths      *int
+	FutureMonths    *int
 	Sources         []CreateSource
 }
 
@@ -177,9 +189,10 @@ func (s *Store) UpdateFeed(ctx context.Context, id uuid.UUID, p UpdateFeedParams
 
 	tag, err := tx.Exec(ctx, `
 		UPDATE feeds SET name = $2, prefix_summaries = $3,
+			past_months = $4, future_months = $5,
 			merged_ics = NULL, merged_at = NULL
 		WHERE id = $1
-	`, id, p.Name, p.PrefixSummaries)
+	`, id, p.Name, p.PrefixSummaries, p.PastMonths, p.FutureMonths)
 	if err != nil {
 		return err
 	}
@@ -219,7 +232,7 @@ func (s *Store) RotateFeedToken(ctx context.Context, id uuid.UUID, salt, hash []
 // GetFeed loads a feed and its sources ordered by position.
 func (s *Store) GetFeed(ctx context.Context, id uuid.UUID) (Feed, error) {
 	row := s.pool.QueryRow(ctx, `
-		SELECT id, name, prefix_summaries,
+		SELECT id, name, prefix_summaries, past_months, future_months,
 			feed_token_salt, feed_token_hash,
 			manage_token_salt, manage_token_hash,
 			merged_ics, merged_at, last_request_at, created_at
@@ -262,7 +275,7 @@ type scannable interface {
 func scanFeed(row scannable) (Feed, error) {
 	var f Feed
 	err := row.Scan(
-		&f.ID, &f.Name, &f.PrefixSummaries,
+		&f.ID, &f.Name, &f.PrefixSummaries, &f.PastMonths, &f.FutureMonths,
 		&f.FeedTokenSalt, &f.FeedTokenHash,
 		&f.ManageTokenSalt, &f.ManageTokenHash,
 		&f.MergedICS, &f.MergedAt, &f.LastRequestAt, &f.CreatedAt,

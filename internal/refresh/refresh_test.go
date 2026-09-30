@@ -43,6 +43,28 @@ func TestFreshMergeSkipsFetcher(t *testing.T) {
 	}
 }
 
+func TestRefreshDropsEventsOutsideMixWindow(t *testing.T) {
+	now := time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC)
+	icsA := readICS(t, "calendar_a.ics")
+	past := 0
+	feed := feedWithMerge(nil, time.Time{}, now, src("https://example.com/a.ics"))
+	feed.PastMonths = &past
+
+	st := newMemStore(feed)
+	ft := &fakeFetch{byURL: map[string]fetch.Result{
+		"https://example.com/a.ics": {Body: icsA, Status: 200},
+	}}
+	svc := refresh.New(st, ft, func() time.Time { return now })
+
+	got, err := svc.Refresh(context.Background(), st.feed.ID)
+	if err != nil {
+		t.Fatalf("refresh: %v", err)
+	}
+	if bytes.Contains(got, []byte("Meeting A")) {
+		t.Fatalf("event outside the mix window was merged:\n%s", got)
+	}
+}
+
 func TestStaleAllOKSavesMerge(t *testing.T) {
 	now := time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC)
 	old := []byte("BEGIN:VCALENDAR\r\nOLD\r\nEND:VCALENDAR\r\n")

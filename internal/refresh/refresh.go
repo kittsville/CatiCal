@@ -133,7 +133,11 @@ func (s *Service) refreshOnce(ctx context.Context, id uuid.UUID) ([]byte, error)
 		return nil, ErrNoUsableSources
 	}
 
-	merged, err := icalmerge.Merge(feed.Name, named)
+	merged, err := icalmerge.MergeWithWindow(feed.Name, named, icalmerge.Window{
+		Now:          now,
+		PastMonths:   feed.PastMonths,
+		FutureMonths: feed.FutureMonths,
+	})
 	if err != nil {
 		if decision.ServeCacheOnError() && hasMerged {
 			return append([]byte(nil), feed.MergedICS...), nil

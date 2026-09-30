@@ -11,6 +11,7 @@ import (
 	"html/template"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -67,6 +68,8 @@ type pageData struct {
 	Notice          string
 	Name            string
 	Prefix          bool
+	PastMonths      string
+	FutureMonths    string
 	Slots           []slot
 	FeedURL         string
 	ManageURL       string
@@ -114,6 +117,39 @@ type slot struct {
 
 func emptySlots() []slot {
 	return make([]slot, fetch.MaxSources)
+}
+
+func manageFields(feed store.Feed, path, errMsg, notice string) pageData {
+	return pageData{
+		Title:        "Managed combined calendar",
+		Error:        errMsg,
+		Notice:       notice,
+		Name:         feed.Name,
+		Prefix:       feed.PrefixSummaries,
+		PastMonths:   formatMonths(feed.PastMonths),
+		FutureMonths: formatMonths(feed.FutureMonths),
+		Slots:        slotsFromFeed(feed),
+		FormAction:   path,
+	}
+}
+
+func formatMonths(n *int) string {
+	if n == nil {
+		return ""
+	}
+	return strconv.Itoa(*n)
+}
+
+func parseOptionalMonths(raw string) (*int, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < 0 || n > store.MaxWindowMonths {
+		return nil, fmt.Errorf("month limits must be whole numbers from 0 to %d", store.MaxWindowMonths)
+	}
+	return &n, nil
 }
 
 func slotsFromFeed(f store.Feed) []slot {
@@ -225,14 +261,7 @@ func serveManageGET(w http.ResponseWriter, r *http.Request, cfg Config) {
 	if !ok {
 		return
 	}
-	renderManage(w, cfg, http.StatusOK, pageData{
-		Title:      "Managed combined calendar",
-		Name:       feed.Name,
-		Prefix:     feed.PrefixSummaries,
-		Slots:      slotsFromFeed(feed),
-		FormAction: r.URL.Path,
-		Notice:     sourceErrors(feed),
-	})
+	renderManage(w, cfg, http.StatusOK, manageFields(feed, r.URL.Path, "", sourceErrors(feed)))
 }
 
 func serveManagePOST(w http.ResponseWriter, r *http.Request, cfg Config) {
@@ -241,31 +270,40 @@ func serveManagePOST(w http.ResponseWriter, r *http.Request, cfg Config) {
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		renderManage(w, cfg, http.StatusBadRequest, pageData{
-			Title: "Managed combined calendar", Error: "invalid form",
-			Name: feed.Name, Prefix: feed.PrefixSummaries, Slots: slotsFromFeed(feed),
-			FormAction: r.URL.Path,
-		})
+		renderManage(w, cfg, http.StatusBadRequest, manageFields(feed, r.URL.Path, "invalid form", ""))
 		return
 	}
 	if !checkTurnstile(w, r, cfg, turnstileManage, func(msg string, code int) {
-		renderManage(w, cfg, code, pageData{
-			Title: "Managed combined calendar", Error: msg,
-			Name: feed.Name, Prefix: feed.PrefixSummaries, Slots: slotsFromFeed(feed),
-			FormAction: r.URL.Path,
-		})
+		renderManage(w, cfg, code, manageFields(feed, r.URL.Path, msg, ""))
 	}) {
 		return
 	}
 	switch r.FormValue("action") {
 	case "save":
 		name := strings.TrimSpace(r.FormValue("name"))
+		prefix := r.FormValue("prefix_summaries") != ""
+		pastRaw := r.FormValue("past_months")
+		futureRaw := r.FormValue("future_months")
+		reject := func(msg string) {
+			data := manageFields(feed, r.URL.Path, msg, "")
+			data.Name = name
+			data.Prefix = prefix
+			data.PastMonths = pastRaw
+			data.FutureMonths = futureRaw
+			renderManage(w, cfg, http.StatusBadRequest, data)
+		}
 		if name == "" {
-			renderManage(w, cfg, http.StatusBadRequest, pageData{
-				Title: "Managed combined calendar", Error: "name is required",
-				Name: feed.Name, Prefix: feed.PrefixSummaries, Slots: slotsFromFeed(feed),
-				FormAction: r.URL.Path,
-			})
+			reject("name is required")
+			return
+		}
+		pastMonths, err := parseOptionalMonths(pastRaw)
+		if err != nil {
+			reject(err.Error())
+			return
+		}
+		futureMonths, err := parseOptionalMonths(futureRaw)
+		if err != nil {
+			reject(err.Error())
 			return
 		}
 		srcs, err := parseFormSources(r.Context(), r, cfg)
@@ -274,16 +312,14 @@ func serveManagePOST(w http.ResponseWriter, r *http.Request, cfg Config) {
 			return
 		}
 		if err != nil {
-			renderManage(w, cfg, http.StatusBadRequest, pageData{
-				Title: "Managed combined calendar", Error: err.Error(),
-				Name: name, Prefix: r.FormValue("prefix_summaries") != "", Slots: slotsFromFeed(feed),
-				FormAction: r.URL.Path,
-			})
+			reject(err.Error())
 			return
 		}
 		err = cfg.Admin.UpdateFeed(r.Context(), feed.ID, store.UpdateFeedParams{
 			Name:            name,
-			PrefixSummaries: r.FormValue("prefix_summaries") != "",
+			PrefixSummaries: prefix,
+			PastMonths:      pastMonths,
+			FutureMonths:    futureMonths,
 			Sources:         srcs,
 		})
 		if err != nil {
@@ -295,11 +331,7 @@ func serveManagePOST(w http.ResponseWriter, r *http.Request, cfg Config) {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
-		renderManage(w, cfg, http.StatusOK, pageData{
-			Title: "Managed combined calendar", Notice: "Saved.",
-			Name: updated.Name, Prefix: updated.PrefixSummaries, Slots: slotsFromFeed(updated),
-			FormAction: r.URL.Path,
-		})
+		renderManage(w, cfg, http.StatusOK, manageFields(updated, r.URL.Path, "", "Saved."))
 	case "delete":
 		if err := cfg.Admin.DeleteFeed(r.Context(), feed.ID); err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
@@ -531,6 +563,7 @@ h1.mdc-typography--headline1{font-size:clamp(1.75rem,6vw,2.75rem);line-height:1.
 p,label,dd,dt{overflow-wrap:anywhere;max-width:100%}
 label{display:block;margin:.6rem 0 .2rem}
 input[type=text],input[type=url]{display:block;width:100%;max-width:100%;padding:.4rem}
+input[type=number]{width:5rem;padding:.4rem;margin:0 .25rem}
 .row{display:grid;grid-template-columns:minmax(0,1fr) minmax(5rem,8rem);gap:.5rem;margin:.5rem 0;}
 .row>*{min-width:0;max-width:100%}
 .warn,.err{padding:.75rem;border:1px solid;overflow-wrap:anywhere}
@@ -625,6 +658,9 @@ const manageBody = `
 <form method="post" action="{{.FormAction}}">
 <label>Name <input type="text" name="name" value="{{.Name}}" required></label>
 <label><input type="checkbox" name="prefix_summaries" {{if .Prefix}}checked{{end}}> Prefix event titles with source labels</label>
+<label>Include events from the last <input type="number" name="past_months" min="0" max="120" step="1" inputmode="numeric" value="{{.PastMonths}}"> months</label>
+<label>Include events up to <input type="number" name="future_months" min="0" max="120" step="1" inputmode="numeric" value="{{.FutureMonths}}"> months ahead</label>
+<p>Leave either box empty for no limit on that side.</p>
 <p>Sources (https URLs)</p>
 ` + sourceRowsHTML + `
 {{if .SiteKey}}

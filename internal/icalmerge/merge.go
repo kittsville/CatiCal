@@ -24,8 +24,14 @@ type NamedCalendar struct {
 // Components are copied (not mapped to a DTO). Duplicate VTIMEZONE TZIDs
 // are kept once. Event UIDs are prefixed with each source ID so collisions
 // across feeds stay distinct while master/exception events in one source share
-// a prefix.
+// a prefix. No event window is applied.
 func Merge(name string, sources []NamedCalendar) ([]byte, error) {
+	return MergeWithWindow(name, sources, Window{})
+}
+
+// MergeWithWindow combines source calendars and drops VEVENTs that fall
+// outside w. An inactive window matches Merge.
+func MergeWithWindow(name string, sources []NamedCalendar, w Window) ([]byte, error) {
 	out := ics.NewCalendar()
 	out.SetVersion("2.0")
 	out.SetProductId(prodID)
@@ -40,7 +46,14 @@ func Merge(name string, sources []NamedCalendar) ([]byte, error) {
 		if err != nil {
 			return nil, fmt.Errorf("parse source %s: %w", src.ID, err)
 		}
+		var keeps map[*ics.VEvent]bool
+		if w.Active() {
+			keeps = eventsInWindow(cal, w)
+		}
 		for _, comp := range cal.Components {
+			if ev, ok := comp.(*ics.VEvent); ok && keeps != nil && !keeps[ev] {
+				continue
+			}
 			if err := copyComponent(out, comp, src, seenTZ); err != nil {
 				return nil, err
 			}

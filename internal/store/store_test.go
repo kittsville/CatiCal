@@ -98,6 +98,9 @@ func TestInsertAndGetFeed(t *testing.T) {
 	if got.Name != "Work+Home" || !got.PrefixSummaries {
 		t.Fatalf("feed fields: %+v", got)
 	}
+	if got.PastMonths != nil || got.FutureMonths != nil {
+		t.Fatalf("new mix window should be open: past=%v future=%v", got.PastMonths, got.FutureMonths)
+	}
 	if !got.LastRequestAt.Equal(now) {
 		t.Fatalf("last_request_at: got %v want %v", got.LastRequestAt, now)
 	}
@@ -266,9 +269,12 @@ func TestUpdateFeedReplacesSourcesAndClearsMerge(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	past, future := 2, 3
 	err := s.UpdateFeed(ctx, feed.ID, store.UpdateFeedParams{
 		Name:            "Renamed",
 		PrefixSummaries: true,
+		PastMonths:      &past,
+		FutureMonths:    &future,
 		Sources: []store.CreateSource{
 			{URL: "https://example.com/new.ics", Label: "N", Position: 0},
 			{URL: "https://example.com/two.ics", Label: "T", Position: 1},
@@ -285,11 +291,29 @@ func TestUpdateFeedReplacesSourcesAndClearsMerge(t *testing.T) {
 	if got.Name != "Renamed" || !got.PrefixSummaries {
 		t.Fatalf("fields: %+v", got)
 	}
+	if got.PastMonths == nil || *got.PastMonths != 2 || got.FutureMonths == nil || *got.FutureMonths != 3 {
+		t.Fatalf("window: past=%v future=%v", got.PastMonths, got.FutureMonths)
+	}
 	if len(got.Sources) != 2 || got.Sources[0].URL != "https://example.com/new.ics" || got.Sources[1].Label != "T" {
 		t.Fatalf("sources: %+v", got.Sources)
 	}
 	if got.MergedICS != nil || got.MergedAt != nil {
 		t.Fatalf("merged cache should be cleared: ics=%v at=%v", got.MergedICS, got.MergedAt)
+	}
+
+	err = s.UpdateFeed(ctx, feed.ID, store.UpdateFeedParams{
+		Name:    "Renamed",
+		Sources: []store.CreateSource{{URL: "https://example.com/new.ics", Label: "N", Position: 0}},
+	})
+	if err != nil {
+		t.Fatalf("clear window: %v", err)
+	}
+	got, err = s.GetFeed(ctx, feed.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.PastMonths != nil || got.FutureMonths != nil {
+		t.Fatalf("window should clear: past=%v future=%v", got.PastMonths, got.FutureMonths)
 	}
 
 	if err := s.UpdateFeed(ctx, uuid.New(), store.UpdateFeedParams{Name: "x"}); err != store.ErrNotFound {

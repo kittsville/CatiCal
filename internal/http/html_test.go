@@ -60,6 +60,9 @@ func TestCreateFormGETHeadersAndNoindex(t *testing.T) {
 	if !strings.Contains(body, `name="name"`) || !strings.Contains(body, `name="url"`) {
 		t.Fatal("expected name and url fields")
 	}
+	if strings.Contains(body, `name="past_months"`) || strings.Contains(body, `name="future_months"`) {
+		t.Fatal("create form must not offer the event window")
+	}
 	if !strings.Contains(body, mdcCSSURL) {
 		t.Fatal("expected Material Components Web stylesheet")
 	}
@@ -260,6 +263,9 @@ func TestPOSTCreateSuccessContainsBothLinks(t *testing.T) {
 	if strings.Contains(mrec.Body.String(), feedM[2]) {
 		t.Fatal("manage GET must not reprint the feed secret")
 	}
+	if !strings.Contains(mrec.Body.String(), `name="past_months"`) || !strings.Contains(mrec.Body.String(), `name="future_months"`) {
+		t.Fatal("manage page should offer the event window")
+	}
 }
 
 func TestManageGETWrongSecretIs404(t *testing.T) {
@@ -298,6 +304,8 @@ func TestPOSTSaveChangesNameAndSources(t *testing.T) {
 		"action":           {"save"},
 		"name":             {"new-name"},
 		"prefix_summaries": {"on"},
+		"past_months":      {"2"},
+		"future_months":    {"3"},
 		"url":              {"https://1.1.1.1/z.ics"},
 		"label":            {"Z"},
 	})
@@ -312,8 +320,72 @@ func TestPOSTSaveChangesNameAndSources(t *testing.T) {
 	if feed.Name != "new-name" || !feed.PrefixSummaries {
 		t.Fatalf("feed %+v", feed)
 	}
+	if feed.PastMonths == nil || *feed.PastMonths != 2 || feed.FutureMonths == nil || *feed.FutureMonths != 3 {
+		t.Fatalf("window past=%v future=%v", feed.PastMonths, feed.FutureMonths)
+	}
 	if len(feed.Sources) != 1 || feed.Sources[0].URL != "https://1.1.1.1/z.ics" {
 		t.Fatalf("sources %+v", feed.Sources)
+	}
+	if !strings.Contains(rec.Body.String(), `name="past_months"`) || !strings.Contains(rec.Body.String(), `value="2"`) || !strings.Contains(rec.Body.String(), `value="3"`) {
+		t.Fatal("saved manage page should show the window")
+	}
+}
+
+func TestCreateIgnoresEventWindow(t *testing.T) {
+	st := newMemStore()
+	h := htmlHandler(st)
+	rec := postForm(t, h, "/", url.Values{
+		"name":          {"mix"},
+		"url":           {"https://1.1.1.1/a.ics"},
+		"past_months":   {"4"},
+		"future_months": {"5"},
+	})
+	if rec.Code != http.StatusOK && rec.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d %s", rec.Code, rec.Body.String())
+	}
+	feedM := feedURLRe.FindStringSubmatch(rec.Body.String())
+	if feedM == nil {
+		t.Fatal(rec.Body.String())
+	}
+	id, _ := uuid.Parse(feedM[1])
+	feed, err := st.GetFeed(context.Background(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if feed.PastMonths != nil || feed.FutureMonths != nil {
+		t.Fatalf("create stored a window: past=%v future=%v", feed.PastMonths, feed.FutureMonths)
+	}
+}
+
+func TestManageRejectsBadWindow(t *testing.T) {
+	st := newMemStore()
+	h := htmlHandler(st)
+	created := postForm(t, h, "/", url.Values{
+		"name": {"old"},
+		"url":  {"https://1.1.1.1/a.ics"},
+	})
+	manageM := manageURLRe.FindStringSubmatch(created.Body.String())
+	path := "/m/" + manageM[1] + "/" + manageM[2]
+	rec := postForm(t, h, path, url.Values{
+		"action":        {"save"},
+		"name":          {"old"},
+		"past_months":   {"-1"},
+		"future_months": {"3"},
+		"url":           {"https://1.1.1.1/a.ics"},
+	})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "month limits") || !strings.Contains(rec.Body.String(), `value="-1"`) {
+		t.Fatalf("body %s", rec.Body.String())
+	}
+	id, _ := uuid.Parse(manageM[1])
+	feed, err := st.GetFeed(context.Background(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if feed.PastMonths != nil || feed.FutureMonths != nil {
+		t.Fatalf("rejected save stored a window: past=%v future=%v", feed.PastMonths, feed.FutureMonths)
 	}
 }
 
@@ -591,6 +663,8 @@ func (m *memStore) UpdateFeed(_ context.Context, id uuid.UUID, p store.UpdateFee
 	}
 	f.Name = p.Name
 	f.PrefixSummaries = p.PrefixSummaries
+	f.PastMonths = p.PastMonths
+	f.FutureMonths = p.FutureMonths
 	f.MergedICS = nil
 	f.MergedAt = nil
 	srcs := make([]store.Source, len(p.Sources))
